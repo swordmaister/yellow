@@ -2,31 +2,33 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<title>結界師VR - 妖滅シミュレーター (Fixed)</title>
+<title>真・結界師VR - Physics Edition</title>
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/webxr/VRButton.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/webxr/XRControllerModelFactory.js"></script>
+
+<script type="module">
+  import * as CANNON from 'https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js';
+  window.CANNON = CANNON;
+</script>
 
 <style>
   html,body{height:100%;margin:0;background:#000;color:#fff;font-family:"Sawarabi Mincho", serif; overflow:hidden;}
   canvas{display:block}
   #hud {
     position: fixed; left: 20px; top: 20px;
-    background: rgba(0,20,40,0.6); border: 1px solid #4af;
+    background: rgba(0,20,40,0.7); border: 1px solid #4af;
     padding:15px; border-radius:4px; font-size:16px; width:280px; pointer-events:none; z-index:10;
     box-shadow: 0 0 15px rgba(0,100,255,0.3);
     text-shadow: 0 0 5px #0ff;
   }
-  #hud div{margin:8px 0;}
   .label { color: #8cf; font-size:12px; }
   .val { font-weight:bold; font-size:18px; color:#fff; }
   #tips {
     position: fixed; left:20px; bottom:20px;
-    color: #4af; font-size:14px; opacity:0.8; pointer-events:none;
-    background: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 4px;
+    color: #4af; font-size:14px; background: rgba(0,0,0,0.6); padding:8px; border-radius:4px; pointer-events:none;
   }
-  /* 漢字エフェクト用のフォント指定 */
   @import url('https://fonts.googleapis.com/css2?family=Sawarabi+Mincho&display=swap');
 </style>
 </head>
@@ -34,500 +36,412 @@
 
 <div id="hud">
   <div style="border-bottom:1px solid #4af; padding-bottom:5px; margin-bottom:10px;">
-    <strong>烏森守備隊 HUD (v2.0)</strong>
+    <strong>烏森守備隊 HUD (Physics)</strong>
   </div>
   <div><span class="label">展開数:</span> <span id="kCount" class="val">0</span> / <span id="kLimit" class="val">5</span></div>
-  <div><span class="label">適合率(感度):</span> <span id="sensitivity" class="val">1.0</span>x</div>
   <div><span class="label">状態:</span> <span id="statusText" style="color:#f0a;">索敵中...</span></div>
 </div>
-<div id="tips">トリガー:指定/生成 | グリップ:結(固定) | A長押し:滅 | B:解</div>
+<div id="tips">トリガー:生成 | スティック前:移動(足場へ) | A長押し:滅 | B:解</div>
 
-<script>
-/* -------------------------------------------------------
-  結界師VR: Fixed & Enhanced Version
-  - XR座標取得バグ修正 (World Coordinates)
-  - マテリアル修正 (Emissive Support)
-  - 視認性向上
---------------------------------------------------------*/
+<script type="module">
+import * as CANNON from 'https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js';
 
-// --- 初期設定 ---
+// --- 初期設定 (Three.js) ---
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x020205);
-scene.fog = new THREE.FogExp2(0x020205, 0.025);
+scene.fog = new THREE.FogExp2(0x020205, 0.02);
 
 const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.01, 100);
-camera.position.set(0, 1.6, 2);
+// プレイヤーの初期位置を少し高く設定（床にめり込まないよう）
+const playerGroup = new THREE.Group();
+playerGroup.position.set(0, 0, 2);
+playerGroup.add(camera);
+scene.add(playerGroup);
 
 const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(innerWidth, innerHeight);
 renderer.xr.enabled = true;
-// 輝き表現のためのトーンマッピング
 renderer.toneMapping = THREE.ReinhardToneMapping;
 renderer.toneMappingExposure = 1.5;
 document.body.appendChild(renderer.domElement);
 document.body.appendChild(VRButton.createButton(renderer));
 
-window.addEventListener('resize', ()=> {
-  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+// --- 物理エンジン設定 (Cannon-es) ---
+const world = new CANNON.World();
+world.gravity.set(0, -9.82, 0);
+// マテリアル（反発係数など）
+const defaultMaterial = new CANNON.Material('default');
+const defaultContactMaterial = new CANNON.ContactMaterial(defaultMaterial, defaultMaterial, {
+  friction: 0.1, restitution: 0.7 // よく弾む
 });
+world.addContactMaterial(defaultContactMaterial);
 
-// --- ライティング ---
-const hemi = new THREE.HemisphereLight(0x4444ff, 0x000000, 0.4); 
-scene.add(hemi);
-const dir = new THREE.DirectionalLight(0xaaccff, 1.0); 
-dir.position.set(5,10,5); 
-scene.add(dir);
-
-// --- ステージ（夜の校庭イメージ） ---
+// --- ステージ & 物理床 ---
+// Visual Floor
 const floorGeo = new THREE.PlaneGeometry(40,40);
-const floorMat = new THREE.MeshStandardMaterial({
-  color:0x050510, roughness:0.8, metalness:0.2, 
-  emissive:0x000011
+const floorMat = new THREE.MeshStandardMaterial({color:0x050510, roughness:0.8, emissive:0x000011});
+const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+floorMesh.rotation.x = -Math.PI/2;
+scene.add(floorMesh);
+// Physics Floor
+const floorBody = new CANNON.Body({
+  type: CANNON.Body.STATIC,
+  shape: new CANNON.Plane(),
+  material: defaultMaterial
 });
-const floor = new THREE.Mesh(floorGeo, floorMat);
-floor.rotation.x = -Math.PI/2;
-scene.add(floor);
+floorBody.quaternion.setFromEuler(-Math.PI/2, 0, 0);
+world.addBody(floorBody);
 
-// グリッドヘルパー（視認性向上修正：少し明るく）
+// Grid & Lights
 const grid = new THREE.GridHelper(40, 40, 0x334455, 0x112233);
 scene.add(grid);
+const hemi = new THREE.HemisphereLight(0x4444ff, 0x000000, 0.4); scene.add(hemi);
+const dir = new THREE.DirectionalLight(0xaaccff, 1.0); dir.position.set(5,10,5); scene.add(dir);
 
-// --- 音声合成 (言霊) ---
+// --- 音声合成 ---
 const synth = window.speechSynthesis;
-function speak(text, pitch=1.0, rate=1.2) {
+function speak(text) {
   if(!synth) return;
   try {
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'ja-JP';
-    u.rate = rate; u.pitch = pitch; u.volume = 0.8;
+    u.lang = 'ja-JP'; u.rate = 1.3; u.volume = 0.8;
     synth.speak(u);
-  } catch(e) {
-    // Questブラウザ等でブロックされた場合は無視
-    console.warn("Speech API error or blocked");
-  }
+  } catch(e){}
 }
 
-// --- 漢字・エフェクト生成 ---
-function createKanjiTexture(text, colorStr) {
+// --- 漢字エフェクト ---
+function spawnKanji(text, pos, color="#4af", scale=1.0) {
   const cvs = document.createElement('canvas');
   cvs.width = 256; cvs.height = 256;
   const ctx = cvs.getContext('2d');
   ctx.font = "bold 180px 'Sawarabi Mincho', serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.shadowColor = colorStr;
-  ctx.shadowBlur = 15;
-  ctx.fillStyle = colorStr;
+  ctx.fillStyle = color; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.shadowColor=color; ctx.shadowBlur=20;
   ctx.fillText(text, 128, 128);
-  const tex = new THREE.CanvasTexture(cvs);
-  return tex;
-}
-
-function spawnKanji(text, pos, color="#4af", scale=1.0) {
-  const mat = new THREE.SpriteMaterial({
-    map: createKanjiTexture(text, color), 
-    transparent:true, opacity:1, depthTest:false
-  });
-  const sprite = new THREE.Sprite(mat);
-  sprite.position.copy(pos);
-  sprite.scale.set(0,0,0); // start small
+  
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cvs), transparent:true, depthTest:false}));
+  sprite.position.copy(pos); sprite.scale.set(0,0,0);
   scene.add(sprite);
   
-  // Animation
-  let t = 0;
-  function anim() {
-    t += 0.05;
-    const s = Math.min(1, t*2) * scale;
+  let t=0;
+  function anim(){
+    t+=0.05;
+    const s = Math.min(1, t*2)*scale;
     sprite.scale.set(s,s,s);
-    sprite.material.opacity = Math.max(0, 1 - (t-0.5)*1.5);
-    sprite.position.y += 0.005;
-    if(t < 1.5) {
-      requestAnimationFrame(anim);
-    } else {
-      scene.remove(sprite);
-      mat.map.dispose();
-      mat.dispose();
-    }
+    sprite.material.opacity = Math.max(0, 1-(t-0.5)*1.5);
+    sprite.position.y+=0.01;
+    if(t<1.5) requestAnimationFrame(anim);
+    else { scene.remove(sprite); sprite.material.map.dispose(); sprite.material.dispose(); }
   }
   anim();
 }
 
-// --- 結界システム ---
-let kekkaiList = [];
+// --- 結界管理 ---
+let kekkaiList = []; // { mesh, body, life }
 const KEKKAI_LIMIT = 5;
-let isDrawing = false;
-let ghost = null; // プレビュー用
-let drawStart = new THREE.Vector3();
-let sensitivity = 1.0;
+const KEKKAI_DURATION = 15000; // 15秒で消滅
 
-// マテリアル定義
-// 結界内部（半透明）
-const barrierBodyMat = new THREE.MeshPhongMaterial({
-  color: 0x0088ff, transparent: true, opacity: 0.15, 
-  side: THREE.DoubleSide, shininess: 100, emissive: 0x002244
-});
-// 結界枠線（発光感）
-const barrierLineMat = new THREE.LineBasicMaterial({ color: 0x88ccff, linewidth: 2 });
+// 結界マテリアル
+const boxMat = new THREE.MeshPhongMaterial({color:0x0088ff, transparent:true, opacity:0.2, emissive:0x002244, side:THREE.DoubleSide});
+const lineMat = new THREE.LineBasicMaterial({color:0x88ccff});
 
-// --- コントローラー ---
+// コントローラー
 let controller = renderer.xr.getController(0);
-scene.add(controller);
-// 視線ガイド（レーザー）
-const laserGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-5)]);
-const laser = new THREE.Line(laserGeo, new THREE.LineBasicMaterial({color: 0x224466, transparent:true, opacity:0.3}));
-controller.add(laser);
-
 const controllerGrip = renderer.xr.getControllerGrip(0);
 const modelFactory = new THREE.XRControllerModelFactory();
 controllerGrip.add(modelFactory.createControllerModel(controllerGrip));
-scene.add(controllerGrip);
+scene.add(controller); scene.add(controllerGrip);
+// プレイヤーオフセット調整
+playerGroup.add(controller);
+playerGroup.add(controllerGrip);
 
-// --- 入力イベント処理 ---
+// レーザーガイド
+const laser = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-10)]), new THREE.LineBasicMaterial({color:0x00ffff, transparent:true, opacity:0.3}));
+controller.add(laser);
 
-// 1. トリガー: 「芳意（ターゲット指定）」〜「定礎（位置決め）」
+// --- 操作ロジック ---
+let isDrawing = false;
+let ghost = null;
+let drawStart = new THREE.Vector3();
+
+// トリガー開始：生成準備
 controller.addEventListener('selectstart', () => {
-  if (kekkaiList.length >= KEKKAI_LIMIT) {
-    pulseHUD("結界、展開限界！", "#f44");
-    return;
-  }
+  if (kekkaiList.length >= KEKKAI_LIMIT) { pulseHUD("展開限界", "#f44"); return; }
   isDrawing = true;
-  // ★重要修正: ワールド座標を取得
-  const p = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
-  drawStart.copy(p);
+  drawStart.setFromMatrixPosition(controller.matrixWorld); // World座標
   
-  // ゴースト生成
+  // Ghost表示
   const geo = new THREE.BoxGeometry(1,1,1);
-  ghost = new THREE.Mesh(geo, barrierBodyMat.clone());
-  ghost.material.opacity = 0.3;
-  // ワイヤーフレーム追加
-  const edges = new THREE.EdgesGeometry(geo);
-  const line = new THREE.LineSegments(edges, barrierLineMat);
-  ghost.add(line);
-  
-  ghost.position.copy(p);
-  ghost.scale.set(0.1, 0.1, 0.1);
-  ghost.userData.start = p.clone();
+  ghost = new THREE.Mesh(geo, boxMat.clone());
+  ghost.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), lineMat));
+  ghost.position.copy(drawStart);
+  ghost.scale.set(0.1,0.1,0.1);
   scene.add(ghost);
-
-  hapticPulse(0.1, 20); // 軽い振動
 });
 
+// トリガー終了：結（Ketsu） - 物理ボディ生成
 controller.addEventListener('selectend', () => {
-  if(isDrawing) finalizeGhost(); // トリガー離したら即「結」する場合
+  if(isDrawing && ghost) {
+    finalizeKekkai();
+  }
   isDrawing = false;
 });
 
-// 2. グリップ: 「結（固定）」
-// 結界師らしく「掴んで止める」アクションで固定
-controller.addEventListener('squeezestart', () => {
-  if (ghost) {
-    finalizeGhost(); 
-  }
-});
-
-// --- ロジック関数 ---
-
 function updateGhost() {
-  if (!isDrawing || !ghost) return;
-  // ★重要修正: ワールド座標を取得
-  const p = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
-  const start = ghost.userData.start;
-  // 始点と現在点から中心とサイズを計算
-  const center = new THREE.Vector3().addVectors(start, p).multiplyScalar(0.5);
-  const size = new THREE.Vector3().subVectors(p, start);
+  if(!isDrawing || !ghost) return;
+  const curr = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
+  const center = new THREE.Vector3().addVectors(drawStart, curr).multiplyScalar(0.5);
+  const size = new THREE.Vector3().subVectors(curr, drawStart);
+  // 絶対値 & 最小サイズ
+  size.x = Math.max(0.1, Math.abs(size.x));
+  size.y = Math.max(0.1, Math.abs(size.y));
+  size.z = Math.max(0.1, Math.abs(size.z));
   
-  // サイズ計算（絶対値）+ 感度
-  size.x = Math.abs(size.x) * sensitivity;
-  size.y = Math.abs(size.y) * sensitivity;
-  size.z = Math.abs(size.z) * sensitivity;
-
-  // 最小サイズ保証
-  size.max(new THREE.Vector3(0.05, 0.05, 0.05));
-
   ghost.position.copy(center);
   ghost.scale.copy(size);
 }
 
-function finalizeGhost() {
-  if (!ghost) return;
-  
-  // 実体化
-  const solid = ghost.clone();
-  solid.material = barrierBodyMat.clone();
-  solid.material.opacity = 0.2;
-  
-  // ワイヤーフレームもコピーされているが、強さを変える
-  solid.children[0].material = new THREE.LineBasicMaterial({ color: 0xaaddff, linewidth: 2 });
-  
-  solid.userData = { life: 100, type: 'kekkai' };
-  scene.add(solid);
-  kekkaiList.push(solid);
+function finalizeKekkai() {
+  const size = ghost.scale.clone();
+  const pos = ghost.position.clone();
+  scene.remove(ghost); ghost = null;
+
+  // Visual Mesh
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), boxMat.clone());
+  mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1,1,1)), lineMat.clone()));
+  mesh.position.copy(pos);
+  mesh.scale.copy(size);
+  scene.add(mesh);
+
+  // Physics Body (Static Box)
+  // CannonのBoxは半分のサイズ(halfExtents)を指定
+  const shape = new CANNON.Box(new CANNON.Vec3(size.x/2, size.y/2, size.z/2));
+  const body = new CANNON.Body({ mass: 0, material: defaultMaterial }); // Mass 0 = Static (壁・床になる)
+  body.addShape(shape);
+  body.position.copy(pos);
+  world.addBody(body);
+
+  const kekkai = { mesh, body, created: performance.now() };
+  kekkaiList.push(kekkai);
   
   // 演出
-  spawnKanji("結", solid.position, "#0af", 1.5);
-  speak("ケツ！", 1.2, 1.5);
-  hapticPulse(1.0, 50); // 強い衝撃
+  spawnKanji("結", pos, "#0af");
+  speak("ケツ！");
   pulseHUD("結界 展開", "#0af");
 
-  // ゴースト削除
-  scene.remove(ghost);
-  ghost = null;
-  isDrawing = false;
-  
+  // 自動消滅タイマー
+  setTimeout(() => {
+    if(kekkaiList.includes(kekkai)) removeKekkai(kekkai);
+  }, KEKKAI_DURATION);
+
   document.getElementById('kCount').textContent = kekkaiList.length;
 }
 
-// 滅（クラッシュ）アニメーション
-function metsKekkai(target) {
-  if(!target) return;
-
-  // 敵の巻き込み判定
+// 滅（Metsu）：物理的に縮小して敵を圧殺
+function metsKekkai(k) {
+  if(!k) return;
+  spawnKanji("滅", k.mesh.position, "#f24");
+  speak("メツ！");
+  
+  // 内部の敵判定（簡易：バウンディングボックス）
+  const kBox = new THREE.Box3().setFromObject(k.mesh);
   enemies.forEach(en => {
-    if(intersectsBox(target, en.mesh)) {
-      damageEnemy(en, 999); // 即死級ダメージ
+    if(kBox.containsPoint(en.mesh.position)) {
+      destroyEnemy(en);
     }
   });
 
-  spawnKanji("滅", target.position, "#f24", 2.0);
-  speak("メツ！", 0.8, 1.8);
-  pulseHUD("滅却完了", "#f24");
-  hapticPulse(1.0, 200); // 重い振動
-
-  // 収縮アニメーション
-  const startScale = target.scale.clone();
-  let t = 0;
+  // 物理ボディは即削除（判定を消す）し、見た目を縮小アニメ
+  world.removeBody(k.body);
   
-  // 破片パーティクル生成
-  spawnParticles(target.position, target.scale, 0xff2244);
-
-  function loop() {
-    t += 0.1;
-    const sc = 1.0 - t;
-    if(sc > 0) {
-      target.scale.copy(startScale).multiplyScalar(sc);
-      requestAnimationFrame(loop);
+  let t=0;
+  const startScale = k.mesh.scale.clone();
+  function anim(){
+    t+=0.1;
+    if(t>=1) {
+      scene.remove(k.mesh);
+      kekkaiList = kekkaiList.filter(x=>x!==k);
+      document.getElementById('kCount').textContent = kekkaiList.length;
     } else {
-      removeKekkai(target);
-    }
-  }
-  loop();
-}
-
-// 解（リリース）
-function kaiKekkai(target) {
-  if(!target) return;
-  spawnKanji("解", target.position, "#8fc", 1.0);
-  speak("カイ", 1.2, 1.2);
-  hapticPulse(0.2, 50);
-  removeKekkai(target);
-}
-
-function removeKekkai(mesh) {
-  if(mesh.parent) mesh.parent.remove(mesh);
-  kekkaiList = kekkaiList.filter(x => x !== mesh);
-  document.getElementById('kCount').textContent = kekkaiList.length;
-}
-
-// パーティクル演出
-function spawnParticles(pos, area, colorInt) {
-  const geo = new THREE.BufferGeometry();
-  const count = 30;
-  const posArr = [];
-  for(let i=0; i<count*3; i++) {
-    posArr.push((Math.random()-0.5)*area.x, (Math.random()-0.5)*area.y, (Math.random()-0.5)*area.z);
-  }
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(posArr, 3));
-  const mat = new THREE.PointsMaterial({color:colorInt, size:0.05, transparent:true});
-  const pts = new THREE.Points(geo, mat);
-  pts.position.copy(pos);
-  scene.add(pts);
-  
-  let f = 0;
-  function anim() {
-    f++;
-    pts.rotation.y += 0.1;
-    pts.scale.multiplyScalar(1.05);
-    mat.opacity -= 0.03;
-    if(mat.opacity > 0) requestAnimationFrame(anim);
-    else {
-      scene.remove(pts);
-      geo.dispose();
-      mat.dispose();
+      k.mesh.scale.copy(startScale).multiplyScalar(1-t);
+      spawnParticles(k.mesh.position, 0xff2244);
+      requestAnimationFrame(anim);
     }
   }
   anim();
 }
 
-// --- 敵AI & 判定 ---
+// 解（Kai）：静かに削除
+function kaiKekkai(k) {
+  spawnKanji("解", k.mesh.position, "#8f8");
+  speak("カイ");
+  removeKekkai(k);
+}
+
+function removeKekkai(k) {
+  scene.remove(k.mesh);
+  world.removeBody(k.body);
+  kekkaiList = kekkaiList.filter(x=>x!==k);
+  document.getElementById('kCount').textContent = kekkaiList.length;
+}
+
+// --- 敵管理 (Physics Dynamic) ---
 let enemies = [];
 function spawnEnemy() {
-  // 妖っぽい見た目（コア＋オーラ）
+  const r = 0.2; // 半径
+  // Visual
   const group = new THREE.Group();
-  const core = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(0.15, 1), 
-    new THREE.MeshStandardMaterial({color:0xff0044, emissive:0xaa0022, roughness:0.2})
-  );
-  
-  // ★重要修正: MeshLambertMaterial -> MeshStandardMaterial
-  // Lambertはemissiveを持たないため、光らせる処理が効かなかったバグを修正
-  const aura = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(0.25, 0),
-    new THREE.MeshStandardMaterial({
-      color:0x550022, 
-      transparent:true, 
-      opacity:0.4, 
-      wireframe:true,
-      emissive: 0x000000 // 初期値は黒（発光なし）
-    })
-  );
-  
-  group.add(core); group.add(aura);
-  
-  // ランダム配置
-  group.position.set((Math.random()-0.5)*4, 1.0 + Math.random(), -2 - Math.random()*2);
+  const mesh = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), new THREE.MeshStandardMaterial({color:0xff0044, emissive:0x550011}));
+  group.add(mesh);
   scene.add(group);
-  
-  enemies.push({ mesh: group, hp: 3, time: Math.random()*100 });
-}
-// 初期敵
-spawnEnemy(); spawnEnemy();
 
-function updateEnemies(dt) {
-  if(enemies.length < 3 && Math.random() < 0.01) spawnEnemy();
+  // Physics (Sphere)
+  const body = new CANNON.Body({
+    mass: 1, // 重さあり
+    shape: new CANNON.Sphere(r),
+    material: defaultMaterial
+  });
+  // 空中から降ってくる
+  body.position.set((Math.random()-0.5)*5, 5, (Math.random()-0.5)*5 - 2);
+  world.addBody(body);
+
+  enemies.push({mesh:group, body:body, hp:3});
+}
+
+function updateEnemies() {
+  if(enemies.length < 3 && Math.random()<0.02) spawnEnemy();
 
   enemies.forEach(en => {
-    en.time += dt;
-    en.mesh.position.x += Math.sin(en.time)*0.01;
-    en.mesh.position.y += Math.cos(en.time*1.3)*0.01;
-    en.mesh.rotation.y += 0.02;
-    en.mesh.rotation.z += 0.01;
+    // Sync Physics -> Visual
+    en.mesh.position.copy(en.body.position);
+    en.mesh.quaternion.copy(en.body.quaternion);
     
-    // 芳意（ターゲット）表示
-    const camDir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
-    const toEn = en.mesh.position.clone().sub(camera.position).normalize();
-    const dot = camDir.dot(toEn);
-    
-    // 視線が合っている(dot > 0.98) なら赤く光らせる＝芳意
-    const auraMesh = en.mesh.children[1];
-    if(dot > 0.98) {
-      // ★修正: StandardMaterialなのでemissiveが効く
-      auraMesh.material.emissive.setHex(0xff0000);
-      auraMesh.material.opacity = 0.8;
-      document.getElementById('statusText').textContent = "芳意：妖確認";
-      document.getElementById('statusText').style.color = "#f44";
-    } else {
-      auraMesh.material.emissive.setHex(0x000000);
-      auraMesh.material.opacity = 0.4;
-    }
+    // AI: プレイヤーに向かって転がる力
+    const pPos = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
+    const dir = new THREE.Vector3(pPos.x - en.body.position.x, 0, pPos.z - en.body.position.z).normalize();
+    en.body.applyForce(new CANNON.Vec3(dir.x*2, 0, dir.z*2), en.body.position);
+
+    // 落下したらリスポーン
+    if(en.body.position.y < -5) destroyEnemy(en);
   });
 }
 
-function damageEnemy(en, dmg) {
-  en.hp -= dmg;
-  if(en.hp <= 0) {
-    scene.remove(en.mesh);
-    enemies = enemies.filter(e => e !== en);
-    spawnParticles(en.mesh.position, new THREE.Vector3(1,1,1), 0xaa00ff);
+function destroyEnemy(en) {
+  scene.remove(en.mesh);
+  world.removeBody(en.body);
+  enemies = enemies.filter(e=>e!==en);
+  spawnParticles(en.mesh.position, 0xaa00ff, 20);
+  pulseHUD("妖、滅却", "#f0f");
+}
+
+function spawnParticles(pos, col, count=5) {
+  // 簡易パーティクル
+  for(let i=0; i<count; i++){
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.05,0.05,0.05), new THREE.MeshBasicMaterial({color:col}));
+    m.position.copy(pos);
+    m.position.add(new THREE.Vector3((Math.random()-0.5),(Math.random()-0.5),(Math.random()-0.5)));
+    scene.add(m);
+    let f=0; 
+    function a(){ f++; m.position.y+=0.02; m.rotation.x+=0.1; if(f<30)requestAnimationFrame(a); else scene.remove(m); }
+    a();
   }
 }
 
-function intersectsBox(meshA, meshB) {
-  const boxA = new THREE.Box3().setFromObject(meshA);
-  const boxB = new THREE.Box3().setFromObject(meshB);
-  return boxA.intersectsBox(boxB);
+// --- プレイヤー移動（足場機能） ---
+// スティック入力でレーザーの先の結界の上にテレポートする
+let lastStick = 0;
+function handleTeleport(gp) {
+  // 左手or右手のスティック前倒し
+  const y = gp.axes[3] !== undefined ? gp.axes[3] : gp.axes[1]; 
+  if(y < -0.8 && lastStick >= -0.8) {
+    // Teleport trigger
+    const target = pickKekkai(); // 見ている結界
+    if(target) {
+      // 結界の上面に移動
+      const topY = target.mesh.position.y + target.mesh.scale.y/2 + 1.6; // +身長
+      // XZは結界の中心へ
+      const targetPos = target.mesh.position.clone();
+      
+      // PlayerGroup（カメラ親）を移動
+      // VR内ではCamera位置とRig位置がずれるため、差分計算が必要だが、
+      // 簡易的にRigごと移動させる
+      playerGroup.position.set(targetPos.x, targetPos.y + target.mesh.scale.y/2, targetPos.z);
+      
+      spawnParticles(playerGroup.position, 0x00ffff, 10);
+      speak("移動");
+    }
+  }
+  lastStick = y;
 }
 
-// --- コントローラー入力監視 (A/Bボタン) ---
-let btnState = { A:false, B:false, A_time:0 };
-
-// ★重要修正: Raycaster用にワールド座標を取得する関数
+// --- 入力監視 ---
 function pickKekkai() {
-  // コントローラーの「ワールド」位置を取得
   const origin = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
-  // コントローラーの向きを取得
   const dir = new THREE.Vector3(0,0,-1).applyQuaternion(controller.quaternion);
-  
-  let ray = new THREE.Ray(origin, dir);
-  
-  let closest = null; let minD = Infinity;
+  const ray = new THREE.Ray(origin, dir);
+  let hit=null, minD=Infinity;
   kekkaiList.forEach(k => {
-    const box = new THREE.Box3().setFromObject(k);
-    if(ray.intersectsBox(box)) {
-      const d = origin.distanceTo(k.position);
-      if(d < minD) { minD = d; closest = k; }
+    const box = new THREE.Box3().setFromObject(k.mesh);
+    if(ray.intersectsBox(box)){
+      const d = origin.distanceTo(k.mesh.position);
+      if(d<minD){ minD=d; hit=k; }
     }
   });
-  return closest;
+  return hit;
 }
 
-function pollGamepad() {
+let btnState = {A:false, B:false, At:0};
+function pollInput() {
   const session = renderer.xr.getSession();
   if(!session) return;
-  
-  for(const source of session.inputSources) {
-    if(!source.gamepad) continue;
-    const gp = source.gamepad;
-    // Quest Touch Controller mapping: Button 4 (A/X), Button 5 (B/Y)
+  for(const src of session.inputSources) {
+    if(!src.gamepad) continue;
+    const gp = src.gamepad;
     
-    // Aボタン（滅）
-    if(gp.buttons[4] && gp.buttons[4].pressed) {
-      if(!btnState.A) { btnState.A = true; btnState.A_time = performance.now(); }
+    // Aボタン(滅) Quest: btn[4]
+    if(gp.buttons[4]?.pressed) {
+      if(!btnState.A) { btnState.A=true; btnState.At=performance.now(); }
     } else {
       if(btnState.A) {
-        const dur = performance.now() - btnState.A_time;
-        btnState.A = false;
-        // 長押し判定 (300ms以上)
-        if(dur > 300) {
-          const target = pickKekkai(); // 修正版のpickKekkaiを使用
-          if(target) metsKekkai(target);
-          else pulseHUD("対象不在", "#aaa");
+        if(performance.now()-btnState.At > 300) {
+          const k = pickKekkai();
+          if(k) metsKekkai(k);
         }
+        btnState.A=false;
       }
     }
-    
-    // Bボタン（解）
-    if(gp.buttons[5] && gp.buttons[5].pressed) {
+    // Bボタン(解) Quest: btn[5]
+    if(gp.buttons[5]?.pressed) {
       if(!btnState.B) {
-        btnState.B = true;
-        const target = pickKekkai();
-        if(target) kaiKekkai(target);
+        const k = pickKekkai();
+        if(k) kaiKekkai(k);
+        btnState.B=true; 
       }
-    } else {
-      btnState.B = false;
-    }
+    } else { btnState.B=false; }
+
+    // 移動判定
+    handleTeleport(gp);
   }
 }
 
-// --- ユーティリティ ---
-function pulseHUD(text, col="#fff") {
+function pulseHUD(txt, col){
   const el = document.getElementById('statusText');
-  el.textContent = text;
-  el.style.color = col;
-  setTimeout(() => { if(el.textContent === text) el.style.color = "#8cf"; }, 1000);
+  el.textContent=txt; el.style.color=col;
+  setTimeout(()=>{ if(el.textContent==txt) el.style.color="#f0a"; }, 1500);
 }
 
-function hapticPulse(intensity, ms) {
-  const session = renderer.xr.getSession();
-  if(session && session.inputSources[0] && session.inputSources[0].gamepad) {
-     const gp = session.inputSources[0].gamepad;
-     if(gp.hapticActuators && gp.hapticActuators[0]) {
-       gp.hapticActuators[0].pulse(intensity, ms);
-     }
-  }
-}
-
-// --- ループ ---
-let lastTime = performance.now();
+// --- メインループ ---
+const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
-  const now = performance.now();
-  const dt = (now - lastTime)/1000; 
-  lastTime = now;
+  const dt = Math.min(clock.getDelta(), 0.1);
+
+  // Physics Step
+  world.step(1/60, dt, 3);
 
   updateGhost();
-  pollGamepad();
-  updateEnemies(dt);
+  updateEnemies();
+  pollInput();
 
   renderer.render(scene, camera);
 });
