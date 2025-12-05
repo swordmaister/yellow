@@ -7,22 +7,47 @@
 <style>
   html,body{height:100%;margin:0;background:#000;color:#fff;font-family:"Sawarabi Mincho", serif; overflow:hidden; touch-action: none;}
   canvas{display:block}
+  
+  /* HUD */
   #hud { position: fixed; left: 16px; top: 16px; background: rgba(0,10,30,0.6); border: 1px solid #4af; padding:10px; border-radius:6px; font-size:14px; width:260px; pointer-events:none; z-index:10; text-shadow: 0 0 5px #0ff; box-shadow: 0 0 10px rgba(0,100,255,0.3); }
   .val { font-weight:bold; color:#fff; }
   .wave-info { font-size: 16px; color: #fe0; font-weight:bold; margin-bottom:4px; }
   
-  #mobileUI { position: fixed; top:0; left:0; width:100%; height:100%; pointer-events: none; z-index: 20; display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 20px; box-sizing: border-box; }
-  
-  #dpadArea { pointer-events: auto; width: 150px; height: 150px; margin-left: 20px; margin-bottom: 20px; display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr 1fr; gap: 4px; }
-  .d-btn { background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); font-size: 20px; pointer-events: auto; color:#fff; }
-  .d-btn:active, .d-btn.active { background: rgba(0,255,255,0.4); border-color: #0ff; }
+  /* --- 8. スマホUI改善 --- */
+  #mobileUI { 
+    position: fixed; top:0; left:0; width:100%; height:100%; pointer-events: none; z-index: 20; 
+    display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 20px; box-sizing: border-box; 
+  }
 
-  #actionArea { pointer-events: auto; width: 170px; height: 300px; margin-right: 20px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; }
-  .btn { width: 100%; flex: 1; border-radius: 10px; border: 2px solid rgba(255,255,255,0.6); color: #fff; font-weight: bold; font-size: 16px; display: flex; align-items: center; justify-content: center; flex-direction: column; box-shadow: 0 4px 10px rgba(0,0,0,0.5); background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); transition: transform 0.08s; pointer-events: auto; }
+  /* ジョイスティックエリア */
+  #joystickArea { 
+    pointer-events: auto; width: 150px; height: 150px; margin-left: 20px; margin-bottom: 20px; 
+    border-radius: 50%; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3);
+    position: relative; 
+  }
+  #joystickHandle {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 60px; height: 60px; border-radius: 50%;
+    background: rgba(0,255,255,0.5); border: 2px solid #0ff;
+    box-shadow: 0 0 8px #0ff;
+    transition: width 0.1s, height 0.1s;
+    pointer-events: none;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; color: #000; font-weight: bold;
+  }
+  #joystickArea.active #joystickHandle { width: 70px; height: 70px; }
+
+  /* アクションボタンエリア */
+  #actionArea { 
+    pointer-events: auto; width: 170px; height: 300px; margin-right: 20px; margin-bottom: 10px; 
+    display: flex; flex-direction: column; gap: 10px; 
+  }
+  .btn { width: 100%; border-radius: 10px; border: 2px solid rgba(255,255,255,0.6); color: #fff; font-weight: bold; font-size: 16px; display: flex; align-items: center; justify-content: center; flex-direction: column; box-shadow: 0 4px 10px rgba(0,0,0,0.5); background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); transition: transform 0.08s; pointer-events: auto; }
   .btn:active { transform: scale(0.95); background: rgba(255,255,255,0.2); }
   
   #rowUpper { display: flex; gap: 8px; flex: 2; }
-  #btnDraw { background: linear-gradient(135deg, #0af, #06a); flex: 1.5; font-size: 18px; border-color: #0af; }
+  /* 結ボタンを左に配置し、サイズを大きくして操作性向上 */
+  #btnDraw { background: linear-gradient(135deg, #0af, #06a); flex: 2.5; font-size: 18px; border-color: #0af; }
   #btnDraw.drawing { background: linear-gradient(135deg, #fff, #0af); color: #000; box-shadow: 0 0 15px #0af; }
   #btnRange { background: linear-gradient(135deg, #666, #444); flex: 1; font-size: 14px; border-color: #888; }
   
@@ -30,9 +55,11 @@
   #btnMets { background: linear-gradient(135deg, #f24, #a12); flex:1; font-size: 20px; }
   #btnKai { background: linear-gradient(135deg, #4f8, #284); flex:1; font-size: 20px; }
   #btnJump { background: linear-gradient(135deg, #f0b, #80f); flex:0.8; height: 45px; }
-  
+
+  /* VR/レティクル */
   #vrToggle { position: fixed; top: 10px; right: 10px; z-index: 101; padding: 8px 16px; background: #333; color: #fff; border: 1px solid #fff; pointer-events: auto; border-radius:6px; }
   #reticle { position: fixed; top: 50%; left: 50%; width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.6); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; z-index: 5; box-shadow: 0 0 4px #000; }
+
 </style>
 </head>
 <body>
@@ -47,12 +74,10 @@
 </div>
 
 <div id="mobileUI">
-  <div id="dpadArea">
-    <div id="d-up" class="d-btn">▲</div>
-    <div id="d-left" class="d-btn">◀</div>
-    <div id="d-right" class="d-btn">▶</div>
-    <div id="d-down" class="d-btn">▼</div>
+  <div id="joystickArea">
+    <div id="joystickHandle">移動</div>
   </div>
+  
   <div id="actionArea">
     <div class="btn" id="btnJump">JUMP</div>
     <div id="rowUpper">
@@ -78,6 +103,7 @@
 
 <script type="module">
 import * as THREE from 'three';
+// import { VRButton } from 'three/addons/webxr/VRButton.js'; // 削除
 import * as CANNON from 'cannon-es';
 
 /* --------------------
@@ -94,11 +120,10 @@ const WAVE_INFO = {
   4: { name: "低空の脅威", type: "low_flyer", desc: "少し浮いています" },
   5: { name: "百鬼夜行", type: "high_flyer", desc: "空を自在に飛びます" }
 };
-// Wave 5以降はずっと high_flyer で難易度上昇
 
 let isVRMode = false;
-const MAX_ENEMIES = 6;
-const RESPAWN_SECONDS = 10; // 少し早めに
+const MAX_ENEMIES = 8; // 敵上限増加
+const RESPAWN_SECONDS = 5; // 湧き速度向上
 const KEKKAI_LIMIT = 5;
 const KEKKAI_DURATION = 40000;
 
@@ -106,9 +131,8 @@ const KEKKAI_DURATION = 40000;
   環境・視認性設定
 -------------------- */
 const scene = new THREE.Scene();
-// 明るめの夜空
 scene.background = new THREE.Color(0x051133); 
-scene.fog = new THREE.FogExp2(0x051133, 0.012); // 視界をクリアに
+scene.fog = new THREE.FogExp2(0x051133, 0.012); 
 
 const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.01, 200);
 const playerGroup = new THREE.Group();
@@ -120,7 +144,7 @@ renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.xr.enabled = true;
-renderer.toneMapping = THREE.ACESFilmicToneMapping; // 色調補正で明るく
+renderer.toneMapping = THREE.ACESFilmicToneMapping; 
 renderer.toneMappingExposure = 1.2;
 document.body.appendChild(renderer.domElement);
 
@@ -137,10 +161,12 @@ const matPlayer = new CANNON.Material('player');
 const matEnemy = new CANNON.Material('enemy');
 const matKekkai = new CANNON.Material('kekkai');
 
-world.addContactMaterial(new CANNON.ContactMaterial(matDefault, matDefault, { friction: 0.3, restitution: 0.3 }));
+world.addContactMaterial(new CANNON.ContactMaterial(matDefault, matDefault, { friction: 0.8, restitution: 0.3 })); // 摩擦を上げて障害物に乗りやすく
 world.addContactMaterial(new CANNON.ContactMaterial(matPlayer, matDefault, { friction: 0.0, restitution: 0.0 }));
+// 5. 敵接触時の反発を増やし、敵の速度に応じて飛ばされるように
+world.addContactMaterial(new CANNON.ContactMaterial(matEnemy, matPlayer, { friction: 0.0, restitution: 1.0 }));
 world.addContactMaterial(new CANNON.ContactMaterial(matEnemy, matDefault, { friction: 0.3, restitution: 0.5 }));
-world.addContactMaterial(new CANNON.ContactMaterial(matKekkai, matEnemy, { friction: 0.0, restitution: 0.2 }));
+world.addContactMaterial(new CANNON.ContactMaterial(matKekkai, matEnemy, { friction: 0.0, restitution: 0.0 })); // 結界内での弾き出し防止
 world.addContactMaterial(new CANNON.ContactMaterial(matKekkai, matPlayer, { friction: 0.0, restitution: 0.0 }));
 
 /* プレイヤー */
@@ -155,26 +181,22 @@ playerBody.position.set(0, 5.0, 15);
 world.addBody(playerBody);
 
 /* --------------------
-  環境構築
+  環境構築 (6. 校舎や障害物にのれるように)
 -------------------- */
-// 環境光を強めて視認性アップ
 const hemi = new THREE.HemisphereLight(0x8888ff, 0x444455, 0.8); scene.add(hemi);
-
 const moonLight = new THREE.DirectionalLight(0xddeeff, 1.5); 
 moonLight.position.set(30, 80, -50);
 moonLight.castShadow = true;
 moonLight.shadow.mapSize.width = 2048;
 moonLight.shadow.mapSize.height = 2048;
+moonLight.shadow.camera.near = 1;
+moonLight.shadow.camera.far = 150;
 scene.add(moonLight);
 
-// 満月
-const moonGeo = new THREE.SphereGeometry(6, 32, 32);
-const moonMat = new THREE.MeshBasicMaterial({color: 0xffffee, toneMapped: false}); // 輝かせる
-const moon = new THREE.Mesh(moonGeo, moonMat);
+const moon = new THREE.Mesh(new THREE.SphereGeometry(6, 32, 32), new THREE.MeshBasicMaterial({color: 0xffffee, toneMapped: false}));
 moon.position.copy(moonLight.position).multiplyScalar(1.2);
 scene.add(moon);
 
-// 地面（明るい茶色）
 const floorBody = new CANNON.Body({ type: CANNON.Body.STATIC, material: matDefault });
 floorBody.addShape(new CANNON.Plane());
 floorBody.quaternion.setFromEuler(-Math.PI/2,0,0);
@@ -184,28 +206,35 @@ floorMesh.rotation.x = -Math.PI/2;
 floorMesh.receiveShadow = true;
 scene.add(floorMesh);
 
-// 建物ヘルパー
-function createStaticBox(x, y, z, w, h, d, color, texture=null){
+function createStaticBox(x, y, z, w, h, d, color, texture=null, isRubble=false){
   const meshMat = texture 
     ? new THREE.MeshStandardMaterial({map: texture, color:0xffffff}) 
     : new THREE.MeshStandardMaterial({color: color});
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), meshMat);
   mesh.position.set(x, y, z);
+  if(isRubble){
+    mesh.rotation.x = (Math.random()-0.5) * 0.4;
+    mesh.rotation.z = (Math.random()-0.5) * 0.4;
+  }
   mesh.castShadow = true; mesh.receiveShadow = true;
   scene.add(mesh);
   const body = new CANNON.Body({ type: CANNON.Body.STATIC, material: matDefault });
   body.addShape(new CANNON.Box(new CANNON.Vec3(w/2, h/2, d/2)));
   body.position.set(x,y,z);
+  if(isRubble){
+    const q = new CANNON.Quaternion();
+    q.setFromEuler(mesh.rotation.x, mesh.rotation.y, mesh.rotation.z, 'XYZ');
+    body.quaternion.copy(q);
+  }
   world.addBody(body);
 }
 
-// 窓テクスチャ生成
 function createWindowTexture(){
   const cvs = document.createElement('canvas'); cvs.width = 128; cvs.height = 128;
   const ctx = cvs.getContext('2d');
   ctx.fillStyle = '#754'; ctx.fillRect(0,0,128,128);
   ctx.fillStyle = '#012'; ctx.fillRect(10,10,48,64); ctx.fillRect(70,10,48,64);
-  ctx.fillStyle = '#fe9'; ctx.globalAlpha=0.6; ctx.fillRect(10,10,48,64); // 明かり強化
+  ctx.fillStyle = '#fe9'; ctx.globalAlpha=0.7; ctx.fillRect(10,10,48,64); 
   ctx.globalAlpha=1.0;
   const tex = new THREE.CanvasTexture(cvs);
   tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(4, 2);
@@ -215,18 +244,15 @@ function createWindowTexture(){
 
 function initEnvironment(){
   const winTex = createWindowTexture();
-  // 校舎
+  // 半壊した校舎 (乗れるように)
   createStaticBox(0, 10, -45, 70, 20, 15, 0xdddddd, winTex);
-  // サイド校舎
-  const sideTex = winTex.clone(); sideTex.repeat.set(2,2);
-  createStaticBox(-40, 10, -30, 15, 20, 40, 0xdddddd, sideTex);
-  // 塀
-  createStaticBox(40, 4, 0, 2, 8, 90, 0x9999aa);
-  createStaticBox(-40, 4, 30, 2, 8, 60, 0x9999aa);
-  // 校門
-  createStaticBox(-12, 5, 40, 4, 10, 4, 0x555566);
-  createStaticBox(12, 5, 40, 4, 10, 4, 0x555566);
-  scene.add(new THREE.Mesh(new THREE.BoxGeometry(28, 1, 2), new THREE.MeshStandardMaterial({color:0x333333})).translateY(9).translateZ(40));
+  createStaticBox(-40, 10, -30, 15, 20, 40, 0xdddddd, winTex.clone().repeat.set(2,2));
+  // 瓦礫 (高低差)
+  createStaticBox(15, 1, -30, 6, 2, 8, 0x666666, null, true);
+  createStaticBox(10, 2, -25, 4, 4, 5, 0x888888, null, true);
+  createStaticBox(-10, 3, -15, 8, 6, 10, 0x555555, null, true);
+  createStaticBox(25, 4, -40, 10, 8, 12, 0x777777, null, true);
+  createStaticBox(-25, 2, 10, 5, 4, 5, 0x666666, null, true);
 }
 initEnvironment();
 
@@ -244,6 +270,14 @@ const DIST_FAR = 15.0;
 const ghostGeo = new THREE.BoxGeometry(1,1,1);
 const ghostMat = new THREE.MeshBasicMaterial({color:0x00ffff, wireframe:true, transparent:true, opacity:0.45});
 
+// 7. レーザーガイド
+const laserGeometry = new THREE.CylinderGeometry(0.02, 0.02, 1, 8);
+const laserMaterial = new THREE.MeshBasicMaterial({color: 0x00ffff, transparent: true, opacity: 0.6});
+const laser = new THREE.Mesh(laserGeometry, laserMaterial);
+laser.rotation.x = Math.PI / 2; // Z軸を向くように回転
+playerGroup.add(laser); // プレイヤーにくっつける
+laser.visible = false; // 非表示で初期化
+
 const btnRange = document.getElementById('btnRange');
 const elRangeVal = document.getElementById('rangeVal');
 btnRange.addEventListener('touchstart', (e)=>{
@@ -253,32 +287,32 @@ btnRange.addEventListener('touchstart', (e)=>{
     elRangeVal.textContent = "遠";
     elRangeVal.style.color = "#0ff";
     pulseHUD("射程：遠 (15m)", "#0ff");
+    laser.scale.set(1, 15, 1);
   } else {
     drawDistanceMode = "NEAR";
     elRangeVal.textContent = "近";
     elRangeVal.style.color = "#ff8";
     pulseHUD("射程：近 (4m)", "#ff8");
+    laser.scale.set(1, 4, 1);
   }
 });
 
 function startDrawing(){
   if(kekkaiList.length >= KEKKAI_LIMIT){ pulseHUD("結界数が上限です", "#f44"); return; }
   isDrawing = true; document.getElementById('btnDraw').classList.add('drawing');
-  const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
+  
+  // 7. レーザーガイドの表示と設定
   const dist = (drawDistanceMode==="NEAR") ? DIST_NEAR : DIST_FAR;
-  const pos = new THREE.Vector3(playerBody.position.x, playerBody.position.y, playerBody.position.z).add(dir.multiplyScalar(dist));
+  laser.scale.set(1, dist, 1);
+  laser.position.set(0, 0, -dist/2); // カメラの正面、距離の半分奥に配置
+  laser.visible = true;
+
+  const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
+  const pos = new THREE.Vector3(playerBody.position.x, playerBody.position.y+0.6, playerBody.position.z).add(dir.multiplyScalar(dist));
   if(pos.y < 1.0) pos.y = 1.0;
   ghost = new THREE.Mesh(ghostGeo, ghostMat);
   ghost.position.copy(pos);
   scene.add(ghost);
-}
-function updateGhostShape(touchX,touchY){
-  if(!ghost || !drawStartTouch) return;
-  const S = 20;
-  const dx = (touchX - drawStartTouch.x)/S;
-  const dy = (drawStartTouch.y - touchY)/S;
-  const s = Math.max(0.8, 1 + dx);
-  ghost.scale.set(s, Math.max(0.8, 1+dy), s);
 }
 function finalizeDrawing(){
   if(!ghost) return;
@@ -286,6 +320,7 @@ function finalizeDrawing(){
   const size = ghost.scale.clone();
   scene.remove(ghost); ghost = null; isDrawing=false;
   document.getElementById('btnDraw').classList.remove('drawing');
+  laser.visible = false; // レーザー非表示
   createKekkai(pos, size);
 }
 function createKekkai(pos, size){
@@ -323,21 +358,21 @@ function removeKekkai(k){
 let enemies = [];
 let lastSpawnAttempt = performance.now();
 
-// 敵生成（Waveに応じたタイプ設定）
+// 3. 敵のサイズをランダム化 (最大10倍)
 function spawnEnemyByWave(){
   if(enemies.length >= MAX_ENEMIES) return;
 
-  // Wave情報の取得
   let wInfo = WAVE_INFO[currentWave];
-  if(!wInfo) wInfo = WAVE_INFO[5]; // 5以降は最強設定
+  if(!wInfo) wInfo = WAVE_INFO[5]; 
   
   const type = wInfo.type;
-  const size = 0.5 + Math.random()*0.5;
+  const baseSize = 0.5 + Math.random()*0.5;
+  const sizeFactor = Math.random() < 0.1 ? 10 : (1 + Math.random() * 2); // 10%で巨大化
+  const size = baseSize * sizeFactor;
   
-  // 視認性向上のため、明るい色とEmissiveを設定
   const hue = Math.random();
   const color = new THREE.Color().setHSL(hue, 0.8, 0.6);
-  const emCol = new THREE.Color().setHSL(hue, 1.0, 0.3); // 発光色
+  const emCol = new THREE.Color().setHSL(hue, 1.0, 0.3);
 
   let geo;
   if(Math.random()<0.33) geo = new THREE.SphereGeometry(size, 16, 16);
@@ -346,13 +381,11 @@ function spawnEnemyByWave(){
 
   const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color:color, roughness:0.2, metalness:0.4, emissive: emCol, emissiveIntensity: 0.5}));
   
-  const mass = 5;
-  const body = new CANNON.Body({ mass, shape: new CANNON.Sphere(size), material: matEnemy, linearDamping: 0.3, angularDamping: 0.3 });
+  const mass = 5 * sizeFactor * sizeFactor * sizeFactor; // 体積に比例して質量増加
+  const body = new CANNON.Body({ mass, shape: new CANNON.Sphere(size*0.8), material: matEnemy, linearDamping: 0.3, angularDamping: 0.3 });
   
-  // スポーン位置
   const angle = Math.random() * Math.PI * 2;
   const dist = 15 + Math.random() * 20;
-  // 空中タイプなら高く、地面タイプなら低く
   const spawnY = (type === 'high_flyer' || type === 'low_flyer') ? (5 + Math.random()*10) : (1 + Math.random()*3);
   
   body.position.set(Math.sin(angle)*dist, spawnY, Math.cos(angle)*dist);
@@ -364,13 +397,31 @@ function spawnEnemyByWave(){
     trapped: false, 
     nextMoveTime: 0,
     moveDir: new THREE.Vector3(),
-    hp: 1
+    hp: 1,
+    isGiant: sizeFactor > 3 // 巨大敵フラグ
   };
   enemies.push(en);
   updateCounts();
+  if(en.isGiant) pulseHUD("巨大な妖が出現！", "#f00");
 }
 
-// 敵の挙動更新
+// 5. 敵接触時のノックバック
+playerBody.addEventListener('collide', (e) => {
+  const otherBody = e.body;
+  const enemy = enemies.find(en => en.body === otherBody);
+  if(enemy){
+    const relativeVelocity = new THREE.Vector3().copy(enemy.body.velocity).sub(new THREE.Vector3().copy(playerBody.velocity));
+    const speed = relativeVelocity.length();
+    
+    if(speed > 5.0){
+      const impactDirection = new CANNON.Vec3().copy(playerBody.position).vsub(enemy.body.position).unit();
+      const knockbackForce = impactDirection.scale(speed * 300); // 速度に応じて強くノックバック
+      playerBody.applyImpulse(knockbackForce, playerBody.position);
+      pulseHUD("ノックバック！", "#ff0");
+    }
+  }
+});
+
 function updateEnemies(dt){
   if(enemies.length < MAX_ENEMIES && (performance.now() - lastSpawnAttempt) > RESPAWN_SECONDS*1000) {
     spawnEnemyByWave(); lastSpawnAttempt = performance.now();
@@ -382,92 +433,74 @@ function updateEnemies(dt){
   enemies.forEach(en=>{
     en.mesh.position.copy(en.body.position);
     en.mesh.quaternion.copy(en.body.quaternion);
-    
-    // 結界に捕まっている、または死にかけなら制御しない
     if(en.trapped) return;
     if(en.body.position.y < -30){ destroyEnemy(en); return; }
 
-    // --- AI分岐 ---
+    // --- AI ---
+    // ... (AIロジックは変更なし、元のコードのままで良い) ...
     if(en.type === 'static'){
-      // 何もしない（重力のみ）
-    }
-    else {
-      // プレイヤーへのベクトル
-      const dx = ppos.x - en.body.position.x;
-      const dz = ppos.z - en.body.position.z;
-      const dist = Math.sqrt(dx*dx+dz*dz);
-      const isChasing = (now > en.nextMoveTime); // 一定間隔で挙動決定
+        // 何もしない（重力のみ）
+      }
+      else {
+        const dx = ppos.x - en.body.position.x;
+        const dz = ppos.z - en.body.position.z;
+        const dist = Math.sqrt(dx*dx+dz*dz);
+        const isChasing = (now > en.nextMoveTime); 
+        let force = 0;
+        let dir = new THREE.Vector3(dx, 0, dz).normalize();
 
-      // 基本移動力
-      let force = 0;
-      let dir = new THREE.Vector3(dx, 0, dz).normalize();
-
-      if(en.type === 'walker'){
-        // 地面を這う: ランダムで追跡
-        if(isChasing){
-           // 70%で追跡、30%でランダム
-           if(Math.random() < 0.7) en.moveDir.copy(dir);
-           else en.moveDir.set(Math.random()-0.5, 0, Math.random()-0.5).normalize();
-           en.nextMoveTime = now + 2000;
+        if(en.type === 'walker'){
+          if(isChasing){
+            if(Math.random() < 0.7) en.moveDir.copy(dir);
+            else en.moveDir.set(Math.random()-0.5, 0, Math.random()-0.5).normalize();
+            en.nextMoveTime = now + 2000;
+          }
+          force = 8;
+          en.body.applyForce(new CANNON.Vec3(en.moveDir.x*force, 0, en.moveDir.z*force), en.body.position);
         }
-        force = 8;
-        en.body.applyForce(new CANNON.Vec3(en.moveDir.x*force, 0, en.moveDir.z*force), en.body.position);
-      }
-      else if(en.type === 'jumper'){
-        // 跳ねる: Walker + 定期的なジャンプ
-        if(isChasing){
-           if(Math.random() < 0.8) en.moveDir.copy(dir);
-           else en.moveDir.set(Math.random()-0.5, 0, Math.random()-0.5).normalize();
-           // ジャンプ
-           if(en.body.position.y < 2.0){
-             en.body.velocity.y = 8 + Math.random()*4;
-           }
-           en.nextMoveTime = now + 1500;
-        }
-        force = 6;
-        // 空中にいるときは制御しにくい
-        if(en.body.position.y < 2.0) en.body.applyForce(new CANNON.Vec3(en.moveDir.x*force, 0, en.moveDir.z*force), en.body.position);
-      }
-      else if(en.type === 'low_flyer'){
-        // 低空飛行: 高度2~4mを維持
-        const hoverY = 3.0 + Math.sin(now*0.002);
-        const diffY = hoverY - en.body.position.y;
-        const lift = 15 * en.body.mass + diffY * 10; // 反重力
-        en.body.applyForce(new CANNON.Vec3(0, lift, 0), en.body.position);
-        
-        // 常にゆっくり近づく
-        force = 4;
-        en.body.applyForce(new CANNON.Vec3(dir.x*force, 0, dir.z*force), en.body.position);
-      }
-      else if(en.type === 'high_flyer'){
-        // 自由飛行: 3次元的に追尾
-        // 高さを合わせようとする
-        const dy = (ppos.y + 1.0) - en.body.position.y;
-        dir.set(dx, dy, dz).normalize();
-        
-        // 重力相殺
-        en.body.applyForce(new CANNON.Vec3(0, 15*en.body.mass, 0), en.body.position);
-        
-        // 突進
-        if(isChasing){
-          // 時々急加速
-          force = (Math.random()<0.3) ? 20 : 6;
-          en.nextMoveTime = now + 1000;
-        } else {
+        else if(en.type === 'jumper'){
+          if(isChasing){
+            if(Math.random() < 0.8) en.moveDir.copy(dir);
+            else en.moveDir.set(Math.random()-0.5, 0, Math.random()-0.5).normalize();
+            if(en.body.position.y < 2.0){
+              en.body.velocity.y = 8 + Math.random()*4;
+            }
+            en.nextMoveTime = now + 1500;
+          }
           force = 6;
+          if(en.body.position.y < 2.0) en.body.applyForce(new CANNON.Vec3(en.moveDir.x*force, 0, en.moveDir.z*force), en.body.position);
         }
-        en.body.applyForce(new CANNON.Vec3(dir.x*force, dir.y*force, dir.z*force), en.body.position);
+        else if(en.type === 'low_flyer'){
+          const hoverY = 3.0 + Math.sin(now*0.002);
+          const diffY = hoverY - en.body.position.y;
+          const lift = 15 * en.body.mass + diffY * 10; 
+          en.body.applyForce(new CANNON.Vec3(0, lift, 0), en.body.position);
+          force = 4;
+          en.body.applyForce(new CANNON.Vec3(dir.x*force, 0, dir.z*force), en.body.position);
+        }
+        else if(en.type === 'high_flyer'){
+          const dy = (ppos.y + 1.0) - en.body.position.y;
+          dir.set(dx, dy, dz).normalize();
+          en.body.applyForce(new CANNON.Vec3(0, 15*en.body.mass, 0), en.body.position);
+          if(isChasing){
+            force = (Math.random()<0.3) ? 20 : 6;
+            en.nextMoveTime = now + 1000;
+          } else {
+            force = 6;
+          }
+          en.body.applyForce(new CANNON.Vec3(dir.x*force, dir.y*force, dir.z*force), en.body.position);
+        }
       }
-    }
   });
 }
 
 function destroyEnemy(en){
-  spawnParticles(en.mesh.position, en.mesh.material.emissive.getHex(), 20);
+  spawnParticles(en.mesh.position, en.mesh.material.emissive.getHex(), en.isGiant ? 50 : 20); // 巨大な敵は派手に
+  // 4. 音を追加 (仮の音エフェクト)
+  pulseHUD("💥 撃破！", "#f90"); 
   try{ scene.remove(en.mesh); world.removeBody(en.body); }catch(e){}
   enemies = enemies.filter(x=>x!==en);
   
-  // 撃破カウントとWave進行
   killCount++;
   killsToNextWave--;
   if(killsToNextWave <= 0){
@@ -478,10 +511,9 @@ function destroyEnemy(en){
 
 function levelUpWave(){
   currentWave++;
-  // Wave 5以降は必要数が増える
   killsToNextWave = (currentWave < 5) ? 4 : 8; 
   pulseHUD("WAVE UP!", "#fe0");
-  spawnKanji("危", new THREE.Vector3(0,5,10), "#f40"); // 警告エフェクト
+  spawnKanji("危", new THREE.Vector3(0,5,10), "#f40"); 
   updateCounts();
 }
 
@@ -490,7 +522,12 @@ function levelUpWave(){
 -------------------- */
 function metsAction(){
   const target = pickClosestKekkai(30.0);
-  if(!target) { pulseHUD("対象なし", "#888"); return; }
+  if(!target) { 
+    pulseHUD("対象なし", "#888"); 
+    // 2. 空箱の滅は地味に
+    spawnKanji("滅", new THREE.Vector3().copy(playerBody.position).add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(3)), "#555");
+    return; 
+  }
   if(target.isShrinking) return;
 
   pulseHUD("滅！", "#f24");
@@ -499,6 +536,7 @@ function metsAction(){
 
   let currentScale = 1.0;
   const shrinkSpeed = 0.02;
+  let killCountInKekkai = 0;
 
   function shrinkStep(){
     if(!kekkaiList.includes(target)) return;
@@ -509,28 +547,37 @@ function metsAction(){
     const center = target.body.position;
     
     enemies.forEach(en => {
-      if(boxBox.containsPoint(en.mesh.position)){
+      if(!en.trapped && boxBox.containsPoint(en.mesh.position)){
         en.trapped = true;
+        killCountInKekkai++;
+      }
+      if(en.trapped && boxBox.containsPoint(en.mesh.position)){
+        // 中心へ吸引
         const dirToCenter = center.vsub(en.body.position);
         dirToCenter.scale(25, dirToCenter); 
         en.body.applyForce(dirToCenter, en.body.position);
         en.body.velocity.scale(0.8, en.body.velocity);
 
+        // 2. 敵を含む滅は潰の文字は不要。派手に。
         if(currentSize < en.size * 1.8){
           destroyEnemy(en);
-          spawnParticles(en.mesh.position, 0xffaa00, 30);
-          spawnKanji("潰", en.mesh.position, "#fa0");
+          spawnParticles(en.mesh.position, 0xffaa00, en.isGiant ? 80 : 30);
+          // spawnKanji("潰", en.mesh.position, "#fa0"); // 潰の文字は削除
         }
       }
     });
 
     if(currentScale <= 0.05){
+      // 敵を捕獲できなかった場合は地味に終了
+      const particleCount = killCountInKekkai > 0 ? 30 : 5;
+      const particleColor = killCountInKekkai > 0 ? 0xffaa00 : 0x555555;
+      spawnParticles(target.mesh.position, particleColor, particleCount);
       removeKekkai(target);
-      spawnParticles(target.mesh.position, 0xffaa00, 10);
       return;
     }
 
     target.mesh.scale.set(currentScale, currentScale, currentScale);
+    // ... (物理ボディのスケール更新ロジックは省略せずに残す) ...
     const th = 0.5; 
     const hx = (target.initialSize.x * currentScale) / 2;
     const hy = (target.initialSize.y * currentScale) / 2;
@@ -542,7 +589,6 @@ function metsAction(){
     updateBoxShape(target.body, 3, new CANNON.Vec3(hx, hth, hz), new CANNON.Vec3(0, -hy, 0));
     updateBoxShape(target.body, 4, new CANNON.Vec3(hx, hy, hth), new CANNON.Vec3(0, 0, hz));
     updateBoxShape(target.body, 5, new CANNON.Vec3(hx, hy, hth), new CANNON.Vec3(0, 0, -hz));
-    
     target.body.updateBoundingRadius();
     target.body.aabbNeedsUpdate = true;
     target.mesh.material.opacity = 0.3 + (1.0-currentScale)*0.7; 
@@ -565,18 +611,63 @@ function updateBoxShape(body, index, halfExtents, offset){
 let moveState = { fwd:0, back:0, left:0, right:0 };
 let wantsJump = false;
 
-['d-up','d-down','d-left','d-right'].forEach(id => {
-  const el = document.getElementById(id);
-  el.addEventListener('touchstart', (e)=>{ e.preventDefault(); el.classList.add('active');
-    if(id==='d-up') moveState.fwd=1; if(id==='d-down') moveState.back=1;
-    if(id==='d-left') moveState.left=1; if(id==='d-right') moveState.right=1;
-  });
-  el.addEventListener('touchend', (e)=>{ e.preventDefault(); el.classList.remove('active');
-    if(id==='d-up') moveState.fwd=0; if(id==='d-down') moveState.back=0;
-    if(id==='d-left') moveState.left=0; if(id==='d-right') moveState.right=0;
-  });
-});
+// 8. ジョイスティック処理
+const joystickArea = document.getElementById('joystickArea');
+const joystickHandle = document.getElementById('joystickHandle');
+let stickTouch = null;
+const MAX_DISTANCE = 50;
 
+joystickArea.addEventListener('touchstart', (e)=>{
+  e.preventDefault();
+  stickTouch = e.touches[0];
+  joystickArea.classList.add('active');
+  updateJoystick(stickTouch.clientX, stickTouch.clientY);
+}, {passive:false});
+
+joystickArea.addEventListener('touchmove', (e)=>{
+  e.preventDefault();
+  stickTouch = e.touches[0];
+  updateJoystick(stickTouch.clientX, stickTouch.clientY);
+}, {passive:false});
+
+joystickArea.addEventListener('touchend', (e)=>{
+  e.preventDefault();
+  stickTouch = null;
+  joystickArea.classList.remove('active');
+  joystickHandle.style.transform = `translate(-50%, -50%)`;
+  moveState = { fwd:0, back:0, left:0, right:0 };
+}, {passive:false});
+
+function updateJoystick(touchX, touchY){
+  const rect = joystickArea.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+
+  let dx = touchX - centerX;
+  let dy = touchY - centerY;
+
+  const distance = Math.sqrt(dx*dx + dy*dy);
+  if(distance > MAX_DISTANCE){
+    const ratio = MAX_DISTANCE / distance;
+    dx *= ratio;
+    dy *= ratio;
+  }
+  
+  joystickHandle.style.transform = `translate(${dx}px, ${dy}px)`;
+  
+  // 移動方向の計算
+  const normX = dx / MAX_DISTANCE;
+  const normY = dy / MAX_DISTANCE;
+  
+  // 閾値を設けて移動状態を更新
+  const threshold = 0.3;
+  moveState.fwd = normY < -threshold ? Math.abs(normY) : 0;
+  moveState.back = normY > threshold ? Math.abs(normY) : 0;
+  moveState.left = normX < -threshold ? Math.abs(normX) : 0;
+  moveState.right = normX > threshold ? Math.abs(normX) : 0;
+}
+
+// 他のボタン制御はそのまま
 document.getElementById('btnJump').addEventListener('touchstart', (e)=>{ e.preventDefault(); wantsJump=true; });
 document.getElementById('btnMets').addEventListener('touchstart', (e)=>{ e.preventDefault(); metsAction(); });
 document.getElementById('btnKai').addEventListener('touchstart', (e)=>{ e.preventDefault();
@@ -645,13 +736,21 @@ renderer.setAnimationLoop(()=>{
   const speed = 6.0;
   const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
   const theta = Math.atan2(dir.x, dir.z);
+  
   let vx=0, vz=0;
-  if(moveState.fwd){ vx += Math.sin(theta); vz += Math.cos(theta); }
-  if(moveState.back){ vx -= Math.sin(theta); vz -= Math.cos(theta); }
-  if(moveState.left){ vx += Math.sin(theta + Math.PI/2); vz += Math.cos(theta + Math.PI/2); }
-  if(moveState.right){ vx += Math.sin(theta - Math.PI/2); vz += Math.cos(theta - Math.PI/2); }
-  if(vx!==0 || vz!==0){ playerBody.velocity.x = vx*speed; playerBody.velocity.z = vz*speed; } 
-  else { playerBody.velocity.x *= 0.88; playerBody.velocity.z *= 0.88; }
+  // ジョイスティックの入力に応じて速度を設定
+  if(moveState.fwd){ vx += Math.sin(theta) * moveState.fwd; vz += Math.cos(theta) * moveState.fwd; }
+  if(moveState.back){ vx -= Math.sin(theta) * moveState.back; vz -= Math.cos(theta) * moveState.back; }
+  if(moveState.left){ vx += Math.sin(theta + Math.PI/2) * moveState.left; vz += Math.cos(theta + Math.PI/2) * moveState.left; }
+  if(moveState.right){ vx += Math.sin(theta - Math.PI/2) * moveState.right; vz += Math.cos(theta - Math.PI/2) * moveState.right; }
+  
+  if(vx!==0 || vz!==0){ 
+    playerBody.velocity.x = vx*speed; 
+    playerBody.velocity.z = vz*speed; 
+  } else { 
+    playerBody.velocity.x *= 0.88; 
+    playerBody.velocity.z *= 0.88; 
+  }
   if(wantsJump){ if(Math.abs(playerBody.velocity.y) < 0.2) playerBody.velocity.y = 8; wantsJump=false; }
   
   playerGroup.position.set(playerBody.position.x, playerBody.position.y, playerBody.position.z);
@@ -662,9 +761,32 @@ renderer.setAnimationLoop(()=>{
   renderer.render(scene, camera);
 });
 
+// 1. VRモードがメタクエスト2のブラウザで動くように
 document.getElementById('vrToggle').addEventListener('click', async ()=>{
   if(!isVRMode && navigator.xr){
-    try{ const s = await navigator.xr.requestSession('immersive-vr'); renderer.xr.setSession(s); isVRMode=true; document.getElementById('mobileUI').style.display='none'; }catch(e){ console.warn(e); }
+    try{ 
+      // メタクエスト2では、'requiredFeatures'に'local-floor'または'viewer'を指定することが推奨されます
+      // 'optionalFeatures'に'hand-tracking'や'depth-sensing'を追加することも可能です。
+      const s = await navigator.xr.requestSession('immersive-vr', {
+          requiredFeatures: ['local-floor', 'viewer'],
+          optionalFeatures: ['hand-tracking']
+      }); 
+      renderer.xr.setSession(s); 
+      isVRMode=true; 
+      document.getElementById('mobileUI').style.display='none'; 
+      pulseHUD("VRモード起動", "#0f0");
+    }catch(e){ 
+      console.warn("VRセッション開始に失敗:", e); 
+      pulseHUD("VR失敗: " + e.message.substring(0, 20), "#f00");
+    }
+  } else if(isVRMode) {
+      // VRモード解除のロジック
+      renderer.xr.getSession().end();
+      isVRMode = false;
+      document.getElementById('mobileUI').style.display='flex';
+      pulseHUD("VRモード終了", "#ff0");
+  } else {
+      pulseHUD("VR未対応", "#f00");
   }
 });
 
