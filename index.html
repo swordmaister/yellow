@@ -2,28 +2,41 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<title>真・結界師VR for Quest</title>
+<title>真・結界師VR (修正版)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <style>
   body { margin: 0; background-color: #000; color: #fff; font-family: sans-serif; overflow: hidden; }
-  #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.8); z-index: 999; }
-  #btnVR { padding: 20px 40px; font-size: 24px; background: #0af; border: none; color: white; border-radius: 8px; cursor: pointer; }
-  #info { position: absolute; top: 10px; left: 10px; pointer-events: none; text-shadow: 1px 1px 2px black; }
+  #overlay { 
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+    display: flex; flex-direction: column; align-items: center; justify-content: center; 
+    background: rgba(0,0,0,0.9); z-index: 999; text-align: center;
+  }
+  #btnVR { 
+    padding: 20px 50px; font-size: 24px; background: #444; 
+    border: 2px solid #fff; color: #aaa; border-radius: 10px; cursor: pointer; 
+    margin-top: 20px; transition: 0.3s;
+  }
+  #btnVR.ready { background: #0af; color: white; border-color: #0af; }
+  #statusMsg { margin-top: 15px; color: #f88; font-weight: bold; }
+  #info { position: absolute; top: 10px; left: 10px; pointer-events: none; text-shadow: 1px 1px 2px black; z-index: 10; }
 </style>
 </head>
 <body>
 
 <div id="overlay">
-  <h1>真・結界師VR (Quest対応)</h1>
-  <p>Questのブラウザでアクセスし、下のボタンを押してください</p>
-  <button id="btnVR">VRモード開始</button>
+  <h1>真・結界師VR</h1>
+  <p>Quest 2/3 コントローラー専用</p>
+  <button id="btnVR" disabled>読み込み中...</button>
+  <div id="statusMsg"></div>
+  <p style="font-size:12px; color:#888; margin-top:30px;">※HTTPS接続が必須です</p>
 </div>
+
 <div id="info">
   WAVE: <span id="wave">1</span> | 敵: <span id="ecount">0</span><br>
   射程: <span id="distMode" style="color:#0ff">近 (5m)</span>
 </div>
 
-<!-- Import Maps -->
+<!-- Three.js Import Map -->
 <script type="importmap">
 {
   "imports": {
@@ -36,68 +49,93 @@
 
 <script type="module">
 import * as THREE from 'three';
-import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 import * as CANNON from 'cannon-es';
 
-// --- Global Variables ---
+// --- 変数定義 ---
 let renderer, scene, camera;
-let world, physicsBody; // Player physics
-const timeStep = 1 / 60;
+let world, physicsBody;
 const clock = new THREE.Clock();
 
-// VR Stuff
-let dolly; // The camera rig
-let controllers = { left: null, right: null };
-let controllerGrips = { left: null, right: null };
-let distanceMode = "NEAR"; // NEAR or FAR
+// VR関連
+let dolly;
+let controllers = { right: null, left: null };
+let distanceMode = "NEAR"; 
 let drawDistance = 5.0;
 
-// Game State
+// ゲーム状態
 let kekkaiList = [];
 let enemies = [];
 let ghostKekkai = null;
 let isDrawing = false;
 let wave = 1;
 let spawnTimer = 0;
+let enemyMax = 5;
 
-// Inputs
-let moveVector = new THREE.Vector2();
-let rotateVector = new THREE.Vector2();
+// 入力
 let isJumping = false;
 let canSnapTurn = true;
 
-// Init
-init();
-initPhysics();
-setupVR();
-animate();
-
+// --- 初期化 ---
 function init() {
-  // Renderer
-  renderer = new THREE.WebGLRenderer({ antialias: true });
+  const btn = document.getElementById('btnVR');
+  const msg = document.getElementById('statusMsg');
+
+  // WebXRサポート確認
+  if ('xr' in navigator) {
+    navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+      if (supported) {
+        btn.disabled = false;
+        btn.classList.add('ready');
+        btn.textContent = "VR スタート";
+        msg.textContent = "";
+        msg.style.color = "#4f4";
+      } else {
+        msg.textContent = "このブラウザはVRをサポートしていません";
+      }
+    }).catch(err => {
+      msg.textContent = "WebXRエラー: HTTPSで接続してください";
+    });
+  } else {
+    msg.textContent = "WebXR非対応ブラウザです";
+  }
+
+  // ボタンクリックイベント
+  btn.addEventListener('click', async () => {
+    try {
+      // 音楽や音声を鳴らすならここでユーザーインタラクションとして初期化
+      const session = await navigator.xr.requestSession('immersive-vr', {
+        requiredFeatures: ['local-floor', 'bounded-floor'],
+        optionalFeatures: ['hand-tracking']
+      });
+      renderer.xr.setSession(session);
+      document.getElementById('overlay').style.display = 'none';
+    } catch (e) {
+      alert("VR起動失敗: " + e.message);
+    }
+  });
+
+  // レンダラー設定
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.xr.enabled = true;
   renderer.shadowMap.enabled = true;
   document.body.appendChild(renderer.domElement);
 
-  // Scene
+  // シーン
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x111122);
   scene.fog = new THREE.FogExp2(0x111122, 0.02);
 
-  // Lighting
-  const hemiLight = new THREE.HemisphereLight(0x8888ff, 0x444444, 0.6);
-  scene.add(hemiLight);
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
-  dirLight.position.set(10, 20, 10);
-  dirLight.castShadow = true;
-  dirLight.shadow.mapSize.width = 2048;
-  dirLight.shadow.mapSize.height = 2048;
-  scene.add(dirLight);
+  // ライト
+  const hemi = new THREE.HemisphereLight(0x8888ff, 0x444444, 0.6);
+  scene.add(hemi);
+  const dir = new THREE.DirectionalLight(0xffffff, 1.5);
+  dir.position.set(10, 20, 10);
+  dir.castShadow = true;
+  dir.shadow.mapSize.set(2048, 2048);
+  scene.add(dir);
 
-  // Floor
-  const grid = new THREE.GridHelper(100, 100, 0x444444, 0x222222);
-  scene.add(grid);
+  // 床
   const floorMesh = new THREE.Mesh(
     new THREE.PlaneGeometry(100, 100),
     new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 })
@@ -105,66 +143,57 @@ function init() {
   floorMesh.rotation.x = -Math.PI / 2;
   floorMesh.receiveShadow = true;
   scene.add(floorMesh);
+  
+  // 目印のグリッド
+  const grid = new THREE.GridHelper(100, 100, 0x555555, 0x333333);
+  scene.add(grid);
 
-  // Player Rig (Dolly)
+  // プレイヤーリグ
   dolly = new THREE.Group();
-  dolly.position.set(0, 0, 0); // Physics will verify this
   scene.add(dolly);
-
-  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 200);
   dolly.add(camera);
 
-  // Environment (Simple Walls)
-  createWall(0, 5, -25, 50, 10, 1);
-  createWall(0, 5, 25, 50, 10, 1);
-  createWall(-25, 5, 0, 1, 10, 50);
-  createWall(25, 5, 0, 1, 10, 50);
-  
-  // Obstacles
-  createBox(5, 1, 5, 2, 2, 2);
-  createBox(-5, 2, -5, 4, 4, 4);
+  // コントローラー設定
+  setupControllers();
 
-  // Enter VR Button
-  document.getElementById('btnVR').addEventListener('click', () => {
-    navigator.xr.requestSession('immersive-vr', {
-      requiredFeatures: ['local-floor', 'bounded-floor'],
-      optionalFeatures: ['hand-tracking']
-    }).then((session) => {
-      renderer.xr.setSession(session);
-      document.getElementById('overlay').style.display = 'none';
-    });
-  });
+  // 物理エンジン
+  initPhysics();
+
+  // ステージ構築
+  createEnvironment();
+
+  // ループ開始
+  renderer.setAnimationLoop(render);
 }
 
 function initPhysics() {
   world = new CANNON.World();
   world.gravity.set(0, -15, 0);
   
-  // Materials
-  const matDefault = new CANNON.Material();
-  const matPlayer = new CANNON.Material();
-  const matEnemy = new CANNON.Material();
-  
-  const cm = new CANNON.ContactMaterial(matDefault, matDefault, { friction: 0.5, restitution: 0.1 });
-  const cmP = new CANNON.ContactMaterial(matPlayer, matDefault, { friction: 0.0, restitution: 0.0 });
-  const cmE = new CANNON.ContactMaterial(matEnemy, matDefault, { friction: 0.3, restitution: 0.5 });
-  
+  const defMat = new CANNON.Material();
+  const playerMat = new CANNON.Material();
+  const enemyMat = new CANNON.Material();
+
+  const cm = new CANNON.ContactMaterial(defMat, defMat, { friction: 0.5, restitution: 0.3 });
+  const cmP = new CANNON.ContactMaterial(playerMat, defMat, { friction: 0.0, restitution: 0.0 });
+  const cmE = new CANNON.ContactMaterial(enemyMat, defMat, { friction: 0.3, restitution: 0.9 }); // よく跳ねる
+
   world.addContactMaterial(cm);
   world.addContactMaterial(cmP);
   world.addContactMaterial(cmE);
 
-  // Floor
-  const floorBody = new CANNON.Body({ mass: 0, material: matDefault });
+  // 床物理
+  const floorBody = new CANNON.Body({ mass: 0, material: defMat });
   floorBody.addShape(new CANNON.Plane());
   floorBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
   world.addBody(floorBody);
 
-  // Player Body
-  const radius = 0.3;
+  // プレイヤー物理
   physicsBody = new CANNON.Body({
     mass: 60,
-    shape: new CANNON.Sphere(radius),
-    material: matPlayer,
+    shape: new CANNON.Sphere(0.3),
+    material: playerMat,
     fixedRotation: true,
     linearDamping: 0.9
   });
@@ -172,79 +201,106 @@ function initPhysics() {
   world.addBody(physicsBody);
 }
 
-function setupVR() {
-  const controllerModelFactory = new XRControllerModelFactory();
-
-  // Controller 0
+function setupControllers() {
+  // Right Controller (Index 0 usually)
   const c0 = renderer.xr.getController(0);
-  c0.addEventListener('selectstart', onSelectStart); // Trigger Press
-  c0.addEventListener('selectend', onSelectEnd);     // Trigger Release
-  c0.addEventListener('squeeze', onSqueeze);         // Grip Press (Metsu)
+  c0.addEventListener('selectstart', onSelectStart); // トリガー押下
+  c0.addEventListener('selectend', onSelectEnd);     // トリガー離す
+  c0.addEventListener('squeeze', onSqueeze);         // グリップ（滅）
   dolly.add(c0);
-  
-  const g0 = renderer.xr.getControllerGrip(0);
-  g0.add(controllerModelFactory.createControllerModel(g0));
-  dolly.add(g0);
+  controllers.right = c0;
 
-  // Controller 1
-  const c1 = renderer.xr.getController(1);
-  c1.addEventListener('selectstart', onSelectStart);
-  c1.addEventListener('selectend', onSelectEnd);
-  c1.addEventListener('squeeze', onSqueeze);
-  dolly.add(c1);
-
-  const g1 = renderer.xr.getControllerGrip(1);
-  g1.add(controllerModelFactory.createControllerModel(g1));
-  dolly.add(g1);
-
-  // Ray visualizer
-  const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]);
-  const line = new THREE.Line(geometry);
+  // Visual Line for Right
+  const lineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-1)]);
+  const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: 0x00ffff }));
   line.name = 'line';
   line.scale.z = 5;
-  c0.add(line.clone());
-  c1.add(line.clone());
+  c0.add(line);
+
+  // Left Controller (Index 1 usually)
+  const c1 = renderer.xr.getController(1);
+  dolly.add(c1);
+  controllers.left = c1;
 }
 
+function createEnvironment() {
+  // 壁
+  createWall(0, 5, -25, 50, 10, 1);
+  createWall(0, 5, 25, 50, 10, 1);
+  createWall(-25, 5, 0, 1, 10, 50);
+  createWall(25, 5, 0, 1, 10, 50);
+}
+
+function createWall(x, y, z, w, h, d) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color: 0x444444 }));
+  mesh.position.set(x, y, z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+
+  const shape = new CANNON.Box(new CANNON.Vec3(w/2, h/2, d/2));
+  const body = new CANNON.Body({ mass: 0 });
+  body.addShape(shape);
+  body.position.set(x, y, z);
+  world.addBody(body);
+}
+
+// --- 入力処理 ---
 function handleInput() {
   const session = renderer.xr.getSession();
   if (!session) return;
 
-  // Reset inputs
-  moveVector.set(0, 0);
-  rotateVector.set(0, 0);
-
+  // 入力ソースを走査
   for (const source of session.inputSources) {
     if (!source.gamepad) continue;
-    
     const gp = source.gamepad;
-    
-    // Left Hand (Movement)
+
+    // 左手：移動 (Axes 2,3)
     if (source.handedness === 'left') {
-      moveVector.x = gp.axes[2]; // Stick X
-      moveVector.y = gp.axes[3]; // Stick Y
-      
-      // Button X or Y for Menu/Other? Not used yet.
+      const x = gp.axes[2];
+      const y = gp.axes[3];
+      if (Math.abs(x) > 0.1 || Math.abs(y) > 0.1) {
+        const speed = 5.0;
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        dir.y = 0; dir.normalize();
+        const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0,1,0)).normalize();
+        
+        const move = new THREE.Vector3().addScaledVector(right, x).addScaledVector(dir, y);
+        physicsBody.velocity.x = move.x * speed;
+        physicsBody.velocity.z = move.z * speed;
+      } else {
+        physicsBody.velocity.x *= 0.8;
+        physicsBody.velocity.z *= 0.8;
+      }
     }
-    
-    // Right Hand (Rotation / Actions)
+
+    // 右手：回転 & アクション
     if (source.handedness === 'right') {
-      rotateVector.x = gp.axes[2];
+      const x = gp.axes[2];
       
-      // A Button (Jump) - Index 4 usually on Quest
+      // スナップターン
+      if (Math.abs(x) > 0.6) {
+        if (canSnapTurn) {
+          dolly.rotateY(-Math.PI / 4 * Math.sign(x));
+          canSnapTurn = false;
+        }
+      } else {
+        canSnapTurn = true;
+      }
+
+      // Aボタン (Jump) - 通常ボタンインデックス 4
       if (gp.buttons[4] && gp.buttons[4].pressed) {
         if (!isJumping && Math.abs(physicsBody.velocity.y) < 0.1) {
-          physicsBody.velocity.y = 7;
+          physicsBody.velocity.y = 8;
           isJumping = true;
         }
       } else {
         isJumping = false;
       }
 
-      // B Button (Distance Toggle) - Index 5
+      // Bボタン (距離切替) - 通常ボタンインデックス 5
       if (gp.buttons[5] && gp.buttons[5].pressed) {
-        // Simple debounce needed in real app, but here simple toggle
-        // We use a property on source to debounce
         if (!source.bPressed) {
           toggleDistance();
           source.bPressed = true;
@@ -254,51 +310,29 @@ function handleInput() {
       }
     }
   }
+}
 
-  // Locomotion Logic
-  const speed = 5.0;
-  if (Math.abs(moveVector.x) > 0.1 || Math.abs(moveVector.y) > 0.1) {
-    // Get Camera Direction (Y-rotation only)
-    const direction = new THREE.Vector3();
-    camera.getWorldDirection(direction);
-    direction.y = 0;
-    direction.normalize();
-    
-    const right = new THREE.Vector3();
-    right.crossVectors(direction, new THREE.Vector3(0, 1, 0)).normalize(); // Camera's Right
-
-    // Combine Move Vectors
-    const move = new THREE.Vector3()
-      .addScaledVector(right, moveVector.x) // Left/Right
-      .addScaledVector(direction, moveVector.y); // Fwd/Back
-
-    physicsBody.velocity.x = move.x * speed;
-    physicsBody.velocity.z = move.z * speed;
+// --- アクション ---
+function toggleDistance() {
+  const c = controllers.right;
+  const line = c.getObjectByName('line');
+  if (distanceMode === "NEAR") {
+    distanceMode = "FAR";
+    drawDistance = 15.0;
+    if(line) line.scale.z = 15;
+    document.getElementById('distMode').innerText = "遠 (15m)";
+    document.getElementById('distMode').style.color = "#f0f";
   } else {
-    physicsBody.velocity.x *= 0.8;
-    physicsBody.velocity.z *= 0.8;
-  }
-
-  // Snap Turning
-  if (Math.abs(rotateVector.x) > 0.6) {
-    if (canSnapTurn) {
-      const angle = -Math.PI / 4 * Math.sign(rotateVector.x);
-      // Dolly Rotation
-      dolly.rotateY(angle);
-      canSnapTurn = false;
-    }
-  } else {
-    canSnapTurn = true;
+    distanceMode = "NEAR";
+    drawDistance = 5.0;
+    if(line) line.scale.z = 5;
+    document.getElementById('distMode').innerText = "近 (5m)";
+    document.getElementById('distMode').style.color = "#0ff";
   }
 }
 
-// --- Action Handlers ---
-
 function onSelectStart(event) {
-  // Draw Kekkai Preview
-  const controller = event.target;
-  const handedness = event.data.handedness;
-  if (handedness === 'right') {
+  if (event.data.handedness === 'right') {
     isDrawing = true;
     if (!ghostKekkai) {
       const geo = new THREE.BoxGeometry(1, 1, 1);
@@ -310,9 +344,7 @@ function onSelectStart(event) {
 }
 
 function onSelectEnd(event) {
-  // Spawn Kekkai
-  const handedness = event.data.handedness;
-  if (handedness === 'right' && isDrawing && ghostKekkai) {
+  if (event.data.handedness === 'right' && isDrawing && ghostKekkai) {
     createKekkai(ghostKekkai.position, ghostKekkai.scale);
     scene.remove(ghostKekkai);
     ghostKekkai = null;
@@ -320,166 +352,161 @@ function onSelectEnd(event) {
   }
 }
 
-function onSqueeze(event) {
-  // Metsu (Attack) - Right Grip
-  if (event.data.handedness === 'right') {
-    metsuAction();
-  }
-}
-
-function toggleDistance() {
-  if (distanceMode === "NEAR") {
-    distanceMode = "FAR";
-    drawDistance = 15.0;
-    document.getElementById('distMode').innerText = "遠 (15m)";
-    document.getElementById('distMode').style.color = "#f0f";
-  } else {
-    distanceMode = "NEAR";
-    drawDistance = 5.0;
-    document.getElementById('distMode').innerText = "近 (5m)";
-    document.getElementById('distMode').style.color = "#0ff";
-  }
-  
-  // Update visualizer ray length
-  const c = renderer.xr.getController(0); // Right
-  const line = c.getObjectByName('line');
-  if(line) line.scale.z = drawDistance;
-}
-
-// --- Game Logic ---
-
-function updateGhostPosition() {
+function updateGhost() {
   if (!isDrawing || !ghostKekkai) return;
-  const c = renderer.xr.getController(0); // Right controller
+  const c = controllers.right;
   
-  // Calculate position: Controller Pos + Direction * Distance
-  const dir = new THREE.Vector3(0, 0, -1);
-  dir.applyQuaternion(c.quaternion);
+  // コントローラーの向きと位置を取得
+  const pos = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  c.getWorldPosition(pos);
+  c.getWorldQuaternion(quat);
   
-  const targetPos = new THREE.Vector3().copy(c.position).add(dir.multiplyScalar(drawDistance));
-  // Transform to world space relative to dolly
-  targetPos.applyMatrix4(dolly.matrix); // Dolly doesn't move in Three.js coords much, but rotation matters? 
-  // Wait, c.position is local to dolly. 
-  // Correct logic:
-  const worldPos = new THREE.Vector3();
-  c.getWorldPosition(worldPos);
+  const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  const target = pos.add(dir.multiplyScalar(drawDistance));
   
-  const worldDir = new THREE.Vector3(0, 0, -1);
-  worldDir.applyQuaternion(c.getWorldQuaternion(new THREE.Quaternion()));
+  if (target.y < 1.0) target.y = 1.0; // 地面補正
   
-  const finalPos = worldPos.add(worldDir.multiplyScalar(drawDistance));
-  if (finalPos.y < 1.0) finalPos.y = 1.0;
-  
-  ghostKekkai.position.copy(finalPos);
-  
-  // Pulse scale effect
-  const s = 1.0 + Math.sin(Date.now() * 0.01) * 0.1;
-  ghostKekkai.scale.set(s, s, s);
+  ghostKekkai.position.copy(target);
+  const pulse = 1.5 + Math.sin(Date.now() * 0.01) * 0.2;
+  ghostKekkai.scale.set(pulse, pulse, pulse);
 }
 
 function createKekkai(pos, scale) {
-  const size = 1.5 * scale.x; // Simplified cubic
+  const size = scale.x; // 立方体とする
   const geo = new THREE.BoxGeometry(size, size, size);
   const mat = new THREE.MeshPhongMaterial({ color: 0x00aaff, transparent: true, opacity: 0.4 });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.copy(pos);
   scene.add(mesh);
-  
-  // Physics (Solid Block for now, to block enemies)
+
+  // 物理ボディ (中身の詰まった箱として敵を防ぐ)
   const shape = new CANNON.Box(new CANNON.Vec3(size/2, size/2, size/2));
-  const body = new CANNON.Body({ mass: 0 });
+  const body = new CANNON.Body({ mass: 0 }); // Static
   body.addShape(shape);
   body.position.copy(pos);
   world.addBody(body);
-  
+
   kekkaiList.push({ mesh, body, size, isShrinking: false });
 }
 
-function metsuAction() {
-  // Find nearest Kekkai
-  let target = null;
-  let minD = 999;
-  const pPos = new THREE.Vector3().setFromMatrixPosition(dolly.matrixWorld); // Approximate player head
-  
-  kekkaiList.forEach(k => {
-    const d = pPos.distanceTo(k.mesh.position);
-    if(d < minD && !k.isShrinking) {
-      minD = d;
-      target = k;
-    }
-  });
-  
-  if (target && minD < 20) {
-    target.isShrinking = true;
-    world.removeBody(target.body); // Remove physical barrier
-    
-    // Animation
-    const shrink = () => {
-      if(!kekkaiList.includes(target)) return;
-      target.mesh.scale.multiplyScalar(0.9);
-      
-      // Check Hit
-      const radius = (target.size * target.mesh.scale.x) / 2;
-      enemies.forEach(e => {
-        if(e.mesh.position.distanceTo(target.mesh.position) < radius + 1) {
-          // Succ logic
-          const dir = new THREE.Vector3().subVectors(target.mesh.position, e.mesh.position).normalize();
-          e.body.velocity.set(dir.x*5, dir.y*5, dir.z*5); // Pull in
-          
-          if(target.mesh.scale.x < 0.2) {
-            destroyEnemy(e);
-          }
-        }
-      });
+function onSqueeze(event) {
+  if (event.data.handedness === 'right') {
+    // 滅アクション
+    const pPos = new THREE.Vector3().setFromMatrixPosition(dolly.matrixWorld);
+    let target = null;
+    let minD = 999;
 
-      if (target.mesh.scale.x < 0.1) {
-        scene.remove(target.mesh);
-        kekkaiList = kekkaiList.filter(k => k !== target);
-      } else {
-        requestAnimationFrame(shrink);
+    kekkaiList.forEach(k => {
+      const d = pPos.distanceTo(k.mesh.position);
+      if (d < minD && !k.isShrinking) {
+        minD = d;
+        target = k;
       }
-    };
-    shrink();
+    });
+
+    if (target && minD < 30) {
+      target.isShrinking = true;
+      world.removeBody(target.body); // 物理削除
+
+      // 敵を巻き込むアニメーション
+      const shrinkAnim = () => {
+        if (!kekkaiList.includes(target)) return;
+        target.mesh.scale.multiplyScalar(0.9);
+        
+        const currentRadius = (target.size * target.mesh.scale.x) / 2;
+        
+        enemies.forEach(e => {
+          const d = e.mesh.position.distanceTo(target.mesh.position);
+          if (d < currentRadius + 2) {
+            // 吸い込み
+            const dir = new THREE.Vector3().subVectors(target.mesh.position, e.mesh.position).normalize();
+            e.body.velocity.set(0,0,0);
+            e.body.position.x += dir.x * 0.2;
+            e.body.position.y += dir.y * 0.2;
+            e.body.position.z += dir.z * 0.2;
+            
+            if (target.mesh.scale.x < 0.2) destroyEnemy(e);
+          }
+        });
+
+        if (target.mesh.scale.x < 0.1) {
+          scene.remove(target.mesh);
+          kekkaiList = kekkaiList.filter(k => k !== target);
+        } else {
+          requestAnimationFrame(shrinkAnim);
+        }
+      };
+      shrinkAnim();
+    }
   }
 }
 
+// --- 敵ロジック ---
 function spawnEnemy() {
-  if(enemies.length > 5 + wave) return;
+  if (enemies.length >= enemyMax + wave) return;
   
-  const size = 0.5;
-  const geo = new THREE.SphereGeometry(size);
-  const mat = new THREE.MeshStandardMaterial({ color: 0xff0000, roughness: 0.4 });
-  const mesh = new THREE.Mesh(geo, mat);
-  scene.add(mesh);
+  const size = 0.5 + Math.random() * 0.5;
+  const col = new THREE.Color().setHSL(Math.random(), 0.8, 0.5);
   
-  const body = new CANNON.Body({ mass: 5, shape: new CANNON.Sphere(size) });
+  let mesh, shape, mass;
+  const r = Math.random();
+  
+  if (r < 0.3) {
+    // Box
+    mesh = new THREE.Mesh(new THREE.BoxGeometry(size*1.5, size*1.5, size*1.5), new THREE.MeshStandardMaterial({color:col}));
+    shape = new CANNON.Box(new CANNON.Vec3(size*0.75, size*0.75, size*0.75));
+    mass = 10;
+  } else {
+    // Sphere
+    mesh = new THREE.Mesh(new THREE.SphereGeometry(size), new THREE.MeshStandardMaterial({color:col}));
+    shape = new CANNON.Sphere(size);
+    mass = 5;
+  }
+
+  const body = new CANNON.Body({ mass: mass, shape: shape });
   const angle = Math.random() * Math.PI * 2;
-  const dist = 20;
-  body.position.set(Math.sin(angle)*dist, 5, Math.cos(angle)*dist);
-  body.linearDamping = 0.5;
+  const dist = 20 + Math.random() * 10;
+  body.position.set(Math.sin(angle)*dist, 10, Math.cos(angle)*dist);
   world.addBody(body);
-  
-  enemies.push({ mesh, body, type: 'chaser' });
+  scene.add(mesh);
+
+  enemies.push({ mesh, body, type: (r<0.3)?'walker':'flyer', nextMove: 0 });
   document.getElementById('ecount').innerText = enemies.length;
 }
 
 function updateEnemies() {
   const pPos = new THREE.Vector3(physicsBody.position.x, physicsBody.position.y, physicsBody.position.z);
-  
+  const now = Date.now();
+
   enemies.forEach(e => {
     e.mesh.position.copy(e.body.position);
     e.mesh.quaternion.copy(e.body.quaternion);
-    
-    // AI
-    const toP = new THREE.Vector3().subVectors(pPos, e.mesh.position).normalize();
-    e.body.applyForce(new CANNON.Vec3(toP.x * 10, toP.y * 10 + 2, toP.z * 10), e.body.position);
-    
-    if(e.body.position.y < -10) destroyEnemy(e);
+
+    if (e.body.position.y < -10) { destroyEnemy(e); return; }
+
+    if (now > e.nextMove) {
+      const toP = new THREE.Vector3().subVectors(pPos, e.mesh.position).normalize();
+      
+      let force = 15;
+      let jump = 0;
+      
+      if (e.type === 'flyer') {
+        jump = (e.body.position.y < 8) ? 20 : 0;
+        force = 10;
+      } else {
+        // Walker
+        if (Math.random() < 0.3 && e.body.position.y < 2) jump = 25; // Big Jump
+      }
+      
+      e.body.applyForce(new CANNON.Vec3(toP.x * force, jump, toP.z * force), e.body.position);
+      e.nextMove = now + 500 + Math.random() * 500;
+    }
   });
-  
-  if(Date.now() - spawnTimer > 3000) {
+
+  if (now - spawnTimer > 3000) {
     spawnEnemy();
-    spawnTimer = Date.now();
+    spawnTimer = now;
   }
 }
 
@@ -490,46 +517,33 @@ function destroyEnemy(e) {
   document.getElementById('ecount').innerText = enemies.length;
 }
 
-function createBox(x,y,z,w,h,d) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshStandardMaterial({color: 0x888888}));
-  m.position.set(x,y,z); scene.add(m);
-  const b = new CANNON.Body({mass:0, shape: new CANNON.Box(new CANNON.Vec3(w/2, h/2, d/2))});
-  b.position.set(x,y,z); world.addBody(b);
-}
-function createWall(x,y,z,w,h,d) { createBox(x,y,z,w,h,d); }
-
-// --- Main Loop ---
-
-function animate() {
-  renderer.setAnimationLoop(render);
-}
-
+// --- メインループ ---
 function render() {
   const dt = Math.min(clock.getDelta(), 0.1);
   
-  handleInput(); // VR Input
+  handleInput();
   world.step(1/60, dt, 3);
-  
-  // Sync physics body to dolly (Player position)
-  // But wait, in VR, user can walk in room scale.
-  // We move the dolly based on physics, but we need to account for headset offset?
-  // Simple approach: Dolly position = Physics Body Position.
+
+  // カメラ位置同期
   dolly.position.x = physicsBody.position.x;
-  dolly.position.y = physicsBody.position.y - 1.0; // Eye height adjustment
+  dolly.position.y = physicsBody.position.y;
   dolly.position.z = physicsBody.position.z;
-  
-  updateGhostPosition();
+
+  updateGhost();
   updateEnemies();
-  
+
   renderer.render(scene, camera);
 }
 
-// Window resize
+// リサイズ対応
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+// 初期化実行
+init();
 
 </script>
 </body>
