@@ -2,783 +2,1443 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<title>真・結界師VR — 百鬼夜行・メタクエスト対応フル版</title>
-<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VR結界バトル（フル版）</title>
+
+<!-- Three.js CDN（WebXR対応版） -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/webxr/VRButton.js"></script>
+
 <style>
-  html,body{height:100%;margin:0;background:#000;color:#fff;font-family:"Sawarabi Mincho", serif; overflow:hidden; touch-action: none;}
-  canvas{display:block}
-  #hud { position: fixed; left: 16px; top: 16px; background: rgba(0,10,30,0.6); border: 1px solid #4af; padding:10px; border-radius:6px; font-size:14px; width:260px; pointer-events:none; z-index:10; text-shadow: 0 0 5px #0ff; box-shadow: 0 0 10px rgba(0,100,255,0.3); }
-  .val { font-weight:bold; color:#fff; }
-  .wave-info { font-size: 16px; color: #fe0; font-weight:bold; margin-bottom:4px; }
+    body {
+        margin: 0;
+        padding: 0;
+        background: #000;
+        overflow: hidden;
+        font-family: sans-serif;
+        touch-action: none;
+        user-select: none;
+    }
 
-  #mobileUI { position: fixed; top:0; left:0; width:100%; height:100%; pointer-events: none; z-index: 20; display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 20px; box-sizing: border-box; }
+    /* スマホ用のUI（Questでは非表示） */
+    #mobileUI {
+        position: fixed;
+        bottom: 20px;
+        width: 100%;
+        text-align: center;
+        z-index: 10;
+        display: none;
+    }
 
-  #dpadArea { pointer-events: auto; width: 150px; height: 150px; margin-left: 20px; margin-bottom: 20px; display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr 1fr; gap: 4px; }
-  .d-btn { background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); font-size: 20px; pointer-events: auto; color:#fff; }
-  .d-btn:active, .d-btn.active { background: rgba(0,255,255,0.4); border-color: #0ff; }
+    #createBtn {
+        width: 150px;
+        height: 150px;
+        background: rgba(255,255,255,0.1);
+        border: 2px solid #fff;
+        border-radius: 50%;
+        color: #fff;
+        font-size: 20px;
+    }
 
-  #actionArea { pointer-events: auto; width: 170px; height: 300px; margin-right: 20px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; }
-  .btn { width: 100%; flex: 1; border-radius: 10px; border: 2px solid rgba(255,255,255,0.6); color: #fff; font-weight: bold; font-size: 16px; display: flex; align-items: center; justify-content: center; flex-direction: column; box-shadow: 0 4px 10px rgba(0,0,0,0.5); background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); transition: transform 0.08s; pointer-events: auto; }
-  .btn:active { transform: scale(0.95); background: rgba(255,255,255,0.2); }
-
-  #rowUpper { display: flex; gap: 8px; flex: 2; }
-  #btnDraw { background: linear-gradient(135deg, #0af, #06a); flex: 1.5; font-size: 18px; border-color: #0af; }
-  #btnDraw.drawing { background: linear-gradient(135deg, #fff, #0af); color: #000; box-shadow: 0 0 15px #0af; }
-  #btnRange { background: linear-gradient(135deg, #666, #444); flex: 1; font-size: 14px; border-color: #888; }
-
-  #subActions { display: flex; gap: 8px; flex: 1.2; }
-  #btnMets { background: linear-gradient(135deg, #f24, #a12); flex:1; font-size: 20px; }
-  #btnKai { background: linear-gradient(135deg, #4f8, #284); flex:1; font-size: 20px; }
-  #btnJump { background: linear-gradient(135deg, #f0b, #80f); flex:0.8; height: 45px; }
-
-  #vrToggle { position: fixed; top: 10px; right: 10px; z-index: 101; padding: 8px 16px; background: #333; color: #fff; border: 1px solid #fff; pointer-events: auto; border-radius:6px; }
-  #reticle { position: fixed; top: 50%; left: 50%; width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.6); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; z-index: 5; box-shadow: 0 0 4px #000; }
-
-  /* small hint */
-  #hint { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); padding: 6px 12px; background: rgba(0,0,0,0.6); border-radius: 8px; border:1px solid rgba(255,255,255,0.06); color:#ddd; font-size:13px; pointer-events:none; z-index:102; }
+    /* QuestではVR UIを3D空間内に置くため、画面には何も出さない */
+    #vrUIPlaceholder {
+        display: none;
+    }
 </style>
-
-<!-- importmap: three + examples + cannon -->
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-    "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
-  }
-}
-</script>
 </head>
+
 <body>
-<button id="vrToggle">VRモード</button>
-<div id="reticle"></div>
-<div id="hint">コントローラ：トリガーで結界作成・スティックで移動（Quest）</div>
-
-<div id="hud">
-  <div class="wave-info">WAVE <span id="waveVal">1</span>: <span id="waveName">静寂</span></div>
-  <div>撃破数: <span id="killCount" class="val">0</span> (次へ: <span id="nextWave" class="val">3</span>)</div>
-  <div style="margin-top:4px; font-size:12px; color:#aaa;">結界: <span id="kCount">0</span>/5 | 敵: <span id="eCount">0</span></div>
-  <div id="statusText" style="color:#f0a; margin-top:6px; font-weight:bold;">索敵中…</div>
-</div>
-
-<div id="mobileUI">
-  <div id="dpadArea">
-    <div id="d-up" class="d-btn">▲</div>
-    <div id="d-left" class="d-btn">◀</div>
-    <div id="d-right" class="d-btn">▶</div>
-    <div id="d-down" class="d-btn">▼</div>
-  </div>
-  <div id="actionArea">
-    <div class="btn" id="btnJump">JUMP</div>
-    <div id="rowUpper">
-      <div class="btn" id="btnRange">距離<br><span id="rangeVal" style="color:#ff8">近</span></div>
-      <div class="btn" id="btnDraw">方位<br><small style="font-size:10px">長押し変形</small></div>
+    <!-- スマホ用UI（VRでは非表示） -->
+    <div id="mobileUI">
+        <button id="createBtn">結界</button>
     </div>
-    <div id="subActions">
-      <div class="btn" id="btnMets">滅</div>
-      <div class="btn" id="btnKai">解</div>
-    </div>
-  </div>
-</div>
 
-<script type="module">
-import * as THREE from 'three';
-import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
-import { XRHandMeshModel } from 'three/addons/webxr/XRHandMeshModel.js';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import * as CANNON from 'cannon-es';
-
-/* ===========================
-   基本ゲーム/物理/シーン設定
-   =========================== */
-let currentWave = 1, killCount = 0, killsToNextWave = 3;
-const WAVE_INFO = {
-  1: { name: "静寂 (練習)", type: "static", desc: "敵は動きません" },
-  2: { name: "這い寄る影", type: "walker", desc: "地面を這ってきます" },
-  3: { name: "跳梁跋扈", type: "jumper", desc: "跳ね回ります" },
-  4: { name: "低空の脅威", type: "low_flyer", desc: "少し浮いています" },
-  5: { name: "百鬼夜行", type: "high_flyer", desc: "空を自在に飛びます" }
-};
-
-let isVRMode = false;
-const MAX_ENEMIES = 6;
-const RESPAWN_SECONDS = 8;
-const KEKKAI_LIMIT = 6;
-const KEKKAI_DURATION = 40000;
-
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x051133);
-scene.fog = new THREE.FogExp2(0x051133, 0.012);
-
-const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.01, 200);
-const playerGroup = new THREE.Group();
-scene.add(playerGroup);
-playerGroup.add(camera);
-
-const renderer = new THREE.WebGLRenderer({antialias:true});
-renderer.setSize(innerWidth, innerHeight);
-renderer.xr.enabled = true;
-renderer.xr.setFoveation ? renderer.xr.setFoveation(0.7) : null;
-renderer.shadowMap.enabled = true;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.2;
-document.body.appendChild(renderer.domElement);
-
-/* 物理 */
-const world = new CANNON.World();
-world.gravity.set(0, -15, 0);
-world.broadphase = new CANNON.NaiveBroadphase();
-world.solver.iterations = 20;
-
-const matDefault = new CANNON.Material('default');
-const matPlayer = new CANNON.Material('player');
-const matEnemy = new CANNON.Material('enemy');
-const matKekkai = new CANNON.Material('kekkai');
-
-world.addContactMaterial(new CANNON.ContactMaterial(matDefault, matDefault, { friction: 0.3, restitution: 0.3 }));
-world.addContactMaterial(new CANNON.ContactMaterial(matPlayer, matDefault, { friction: 0.0, restitution: 0.0 }));
-world.addContactMaterial(new CANNON.ContactMaterial(matEnemy, matDefault, { friction: 0.3, restitution: 0.5 }));
-world.addContactMaterial(new CANNON.ContactMaterial(matKekkai, matEnemy, { friction: 0.0, restitution: 0.2 }));
-world.addContactMaterial(new CANNON.ContactMaterial(matKekkai, matPlayer, { friction: 0.0, restitution: 0.0 }));
-
-/* プレイヤー */
-const playerBody = new CANNON.Body({
-  mass: 80,
-  shape: new CANNON.Sphere(0.45),
-  material: matPlayer,
-  fixedRotation: true,
-  angularDamping: 1.0
-});
-playerBody.position.set(0, 5.0, 15);
-world.addBody(playerBody);
-
-/* 環境ライト等 */
-const hemi = new THREE.HemisphereLight(0x8888ff, 0x444455, 0.8); scene.add(hemi);
-const moonLight = new THREE.DirectionalLight(0xddeeff, 1.5);
-moonLight.position.set(30, 80, -50);
-moonLight.castShadow = true;
-moonLight.shadow.mapSize.width = 2048;
-moonLight.shadow.mapSize.height = 2048;
-scene.add(moonLight);
-
-const moon = new THREE.Mesh(new THREE.SphereGeometry(6, 32, 32),
-  new THREE.MeshBasicMaterial({color: 0xffffee, toneMapped:false}));
-moon.position.copy(moonLight.position).multiplyScalar(1.2);
-scene.add(moon);
-
-const floorBody = new CANNON.Body({ type: CANNON.Body.STATIC, material: matDefault });
-floorBody.addShape(new CANNON.Plane());
-floorBody.quaternion.setFromEuler(-Math.PI/2,0,0);
-world.addBody(floorBody);
-const floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(150,150), new THREE.MeshStandardMaterial({color:0x6d5047, roughness: 0.8}));
-floorMesh.rotation.x = -Math.PI/2; floorMesh.receiveShadow = true;
-scene.add(floorMesh);
-
-/* 建物（省略せずにいくつか） */
-function createStaticBox(x,y,z,w,h,d,color,texture=null){
-  const mat = texture ? new THREE.MeshStandardMaterial({map:texture, color:0xffffff}) : new THREE.MeshStandardMaterial({color});
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
-  m.position.set(x,y,z); m.castShadow=true; m.receiveShadow=true; scene.add(m);
-  const b = new CANNON.Body({ type: CANNON.Body.STATIC, material: matDefault });
-  b.addShape(new CANNON.Box(new CANNON.Vec3(w/2, h/2, d/2)));
-  b.position.set(x,y,z); world.addBody(b);
-}
-function createWindowTexture(){
-  const cvs = document.createElement('canvas'); cvs.width=128; cvs.height=128;
-  const ctx = cvs.getContext('2d');
-  ctx.fillStyle = '#754'; ctx.fillRect(0,0,128,128);
-  ctx.fillStyle = '#012'; ctx.fillRect(10,10,48,64); ctx.fillRect(70,10,48,64);
-  ctx.fillStyle = '#fe9'; ctx.globalAlpha=0.6; ctx.fillRect(10,10,48,64); ctx.globalAlpha=1.0;
-  const tex = new THREE.CanvasTexture(cvs); tex.wrapS=THREE.RepeatWrapping; tex.wrapT=THREE.RepeatWrapping; tex.repeat.set(4,2); tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-(function initEnvironment(){
-  const winTex = createWindowTexture();
-  createStaticBox(0,10,-45,70,20,15,0xdddddd, winTex);
-  const sideTex = winTex.clone(); sideTex.repeat.set(2,2);
-  createStaticBox(-40,10,-30,15,20,40,0xdddddd, sideTex);
-  createStaticBox(40,4,0,2,8,90,0x9999aa);
-  createStaticBox(-40,4,30,2,8,60,0x9999aa);
-  createStaticBox(-12,5,40,4,10,4,0x555566);
-  createStaticBox(12,5,40,4,10,4,0x555566);
-})();
-
-/* ===========================
-   結界（VRでの操作を追加）
-   =========================== */
-let kekkaiList = [];
-let isDrawing = false;
-let ghost = null;
-let drawDistanceMode = "NEAR";
-const DIST_NEAR = 4.0, DIST_FAR = 15.0;
-
-const ghostGeo = new THREE.BoxGeometry(1,1,1);
-const ghostMat = new THREE.MeshBasicMaterial({color:0x00ffff, wireframe:true, transparent:true, opacity:0.45});
-
-/* UI elements */
-const btnRange = document.getElementById('btnRange');
-const elRangeVal = document.getElementById('rangeVal');
-btnRange.addEventListener('touchstart',(e)=>{ e.preventDefault(); toggleRange(); });
-function toggleRange(){ if(drawDistanceMode==="NEAR"){ drawDistanceMode="FAR"; elRangeVal.textContent="遠"; elRangeVal.style.color="#0ff"; pulseHUD("射程：遠 (15m)", "#0ff"); } else { drawDistanceMode="NEAR"; elRangeVal.textContent="近"; elRangeVal.style.color="#ff8"; pulseHUD("射程：近 (4m)", "#ff8"); } }
-
-/* ghost の生成（VR用・手元から伸ばす） */
-function startDrawingAt(posWorld){
-  if(kekkaiList.length >= KEKKAI_LIMIT){ pulseHUD("結界数が上限です", "#f44"); return; }
-  isDrawing = true;
-  document.getElementById('btnDraw').classList.add('drawing');
-  const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
-  const dist = (drawDistanceMode==="NEAR") ? DIST_NEAR : DIST_FAR;
-  const startPos = posWorld.clone().add(dir.multiplyScalar(dist*0.3));
-  ghost = new THREE.Mesh(ghostGeo, ghostMat);
-  ghost.position.copy(startPos);
-  ghost.scale.set(1,1,1);
-  scene.add(ghost);
-}
-function updateGhostByVector(scaleVec){
-  if(!ghost) return;
-  // scaleVec is THREE.Vector3 indicating intended scaling multipliers
-  const sX = Math.max(0.5, Math.min(10, scaleVec.x));
-  const sY = Math.max(0.5, Math.min(10, scaleVec.y));
-  const sZ = Math.max(0.5, Math.min(10, scaleVec.z));
-  ghost.scale.set(sX, sY, sZ);
-}
-function finalizeDrawingAt(){
-  if(!ghost) return;
-  const pos = ghost.position.clone();
-  const size = ghost.scale.clone();
-  scene.remove(ghost); ghost = null; isDrawing=false;
-  document.getElementById('btnDraw').classList.remove('drawing');
-  createKekkai(pos, size);
-}
-
-function createKekkai(pos, size){
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), new THREE.MeshPhongMaterial({color:0x00aaff, transparent:true, opacity:0.28, emissive:0x004488, side:THREE.DoubleSide, depthWrite:false}));
-  mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({color:0x88ffff})));
-  mesh.position.copy(pos); scene.add(mesh);
-
-  const body = new CANNON.Body({ mass: 0, material: matKekkai });
-  const hx = size.x/2, hy = size.y/2, hz = size.z/2, hth = 0.25;
-  // 6面の薄い箱で囲う（簡易的な当たり）
-  body.addShape(new CANNON.Box(new CANNON.Vec3(hth, hy, hz)), new CANNON.Vec3(hx, 0, 0));
-  body.addShape(new CANNON.Box(new CANNON.Vec3(hth, hy, hz)), new CANNON.Vec3(-hx, 0, 0));
-  body.addShape(new CANNON.Box(new CANNON.Vec3(hx, hth, hz)), new CANNON.Vec3(0, hy, 0));
-  body.addShape(new CANNON.Box(new CANNON.Vec3(hx, hth, hz)), new CANNON.Vec3(0, -hy, 0));
-  body.addShape(new CANNON.Box(new CANNON.Vec3(hx, hy, hth)), new CANNON.Vec3(0, 0, hz));
-  body.addShape(new CANNON.Box(new CANNON.Vec3(hx, hy, hth)), new CANNON.Vec3(0, 0, -hz));
-  body.position.set(pos.x, pos.y, pos.z);
-  world.addBody(body);
-
-  const k = { mesh, body, initialSize: size.clone(), createdAt: performance.now(), isShrinking:false };
-  kekkaiList.push(k);
-  spawnKanji("結", pos, "#0af");
-  updateCounts();
-  setTimeout(()=>{ if(kekkaiList.includes(k) && !k.isShrinking) removeKekkai(k); }, KEKKAI_DURATION);
-}
-
-function removeKekkai(k){
-  try{ scene.remove(k.mesh); world.removeBody(k.body); }catch(e){}
-  kekkaiList = kekkaiList.filter(x=>x!==k);
-  updateCounts();
-}
-
-/* ===========================
-   敵AI（既存ロジック統合）
-   =========================== */
-let enemies = [];
-let lastSpawnAttempt = performance.now();
-
-function spawnEnemyByWave(){
-  if(enemies.length >= MAX_ENEMIES) return;
-  let wInfo = WAVE_INFO[currentWave] || WAVE_INFO[5];
-  const type = wInfo.type;
-  const size = 0.5 + Math.random()*0.5;
-  const hue = Math.random();
-  const color = new THREE.Color().setHSL(hue, 0.8, 0.6);
-  const emCol = new THREE.Color().setHSL(hue, 1.0, 0.3);
-  let geo = (Math.random()<0.33) ? new THREE.SphereGeometry(size, 16, 16) : ((Math.random()<0.5) ? new THREE.BoxGeometry(size*1.5,size*1.5,size*1.5) : new THREE.IcosahedronGeometry(size*1.2,0));
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color, roughness:0.2, metalness:0.4, emissive:emCol, emissiveIntensity:0.5}));
-  const mass = 5;
-  const body = new CANNON.Body({ mass, shape: new CANNON.Sphere(size), material: matEnemy, linearDamping: 0.3, angularDamping: 0.3 });
-  const angle = Math.random()*Math.PI*2;
-  const dist = 15 + Math.random()*20;
-  const spawnY = (type === 'high_flyer' || type === 'low_flyer') ? (5 + Math.random()*10) : (1 + Math.random()*3);
-  body.position.set(Math.sin(angle)*dist, spawnY, Math.cos(angle)*dist);
-  world.addBody(body); scene.add(mesh);
-  const en = { mesh, body, size, type, trapped:false, nextMoveTime:0, moveDir:new THREE.Vector3(), hp:1 };
-  enemies.push(en); updateCounts();
-}
-function updateEnemies(dt){
-  if(enemies.length < MAX_ENEMIES && (performance.now() - lastSpawnAttempt) > RESPAWN_SECONDS*1000){ spawnEnemyByWave(); lastSpawnAttempt = performance.now(); }
-  const ppos = playerBody.position;
-  const now = performance.now();
-  enemies.forEach(en=>{
-    en.mesh.position.copy(en.body.position);
-    en.mesh.quaternion.copy(en.body.quaternion);
-    if(en.trapped) return;
-    if(en.body.position.y < -30){ destroyEnemy(en); return; }
-    if(en.type === 'static') return;
-    const dx = ppos.x - en.body.position.x, dz = ppos.z - en.body.position.z;
-    const dist = Math.sqrt(dx*dx+dz*dz);
-    const isChasing = (now > en.nextMoveTime);
-    let force = 0; let dir = new THREE.Vector3(dx,0,dz).normalize();
-    if(en.type === 'walker'){
-      if(isChasing){ if(Math.random()<0.7) en.moveDir.copy(dir); else en.moveDir.set(Math.random()-0.5,0,Math.random()-0.5).normalize(); en.nextMoveTime = now + 2000; }
-      force = 8; en.body.applyForce(new CANNON.Vec3(en.moveDir.x*force, 0, en.moveDir.z*force), en.body.position);
-    } else if(en.type === 'jumper'){
-      if(isChasing){ if(Math.random()<0.8) en.moveDir.copy(dir); else en.moveDir.set(Math.random()-0.5,0,Math.random()-0.5).normalize(); if(en.body.position.y < 2.0){ en.body.velocity.y = 8 + Math.random()*4; } en.nextMoveTime = now + 1500; }
-      force = 6; if(en.body.position.y < 2.0) en.body.applyForce(new CANNON.Vec3(en.moveDir.x*force, 0, en.moveDir.z*force), en.body.position);
-    } else if(en.type === 'low_flyer'){
-      const hoverY = 3.0 + Math.sin(now*0.002);
-      const diffY = hoverY - en.body.position.y;
-      const lift = 15 * en.body.mass + diffY * 10;
-      en.body.applyForce(new CANNON.Vec3(0, lift, 0), en.body.position);
-      force = 4; en.body.applyForce(new CANNON.Vec3(dir.x*force, 0, dir.z*force), en.body.position);
-    } else if(en.type === 'high_flyer'){
-      const dy = (ppos.y + 1.0) - en.body.position.y;
-      dir.set(dx, dy, dz).normalize();
-      en.body.applyForce(new CANNON.Vec3(0, 15*en.body.mass, 0), en.body.position);
-      if(isChasing){ force = (Math.random()<0.3) ? 20 : 6; en.nextMoveTime = now + 1000; } else force = 6;
-      en.body.applyForce(new CANNON.Vec3(dir.x*force, dir.y*force, dir.z*force), en.body.position);
-    }
-  });
-}
-function destroyEnemy(en){
-  spawnParticles(en.mesh.position, en.mesh.material.emissive.getHex(), 20);
-  try{ scene.remove(en.mesh); world.removeBody(en.body); }catch(e){}
-  enemies = enemies.filter(x=>x!==en);
-  killCount++; killsToNextWave--; if(killsToNextWave <= 0) levelUpWave();
-  updateCounts();
-}
-function levelUpWave(){ currentWave++; killsToNextWave = (currentWave < 5) ? 4 : 8; pulseHUD("WAVE UP!", "#fe0"); spawnKanji("危", new THREE.Vector3(0,5,10), "#f40"); updateCounts(); }
-
-/* ===========================
-   滅/解/ユーティリティ
-   =========================== */
-function metsAction(){
-  const target = pickClosestKekkai(30.0);
-  if(!target){ pulseHUD("対象なし", "#888"); return; }
-  if(target.isShrinking) return;
-  pulseHUD("滅！", "#f24");
-  spawnKanji("滅", target.mesh.position, "#f24");
-  target.isShrinking = true;
-  let currentScale = 1.0; const shrinkSpeed = 0.02;
-  (function shrinkStep(){
-    if(!kekkaiList.includes(target)) return;
-    currentScale -= shrinkSpeed;
-    const currentSize = Math.min(target.initialSize.x, target.initialSize.y, target.initialSize.z) * currentScale;
-    const boxBox = new THREE.Box3().setFromObject(target.mesh);
-    const center = target.body.position;
-    enemies.forEach(en=>{
-      if(boxBox.containsPoint(en.mesh.position)){
-        en.trapped = true;
-        const dirToCenter = center.vsub(en.body.position);
-        dirToCenter.scale(25, dirToCenter);
-        en.body.applyForce(dirToCenter, en.body.position);
-        en.body.velocity.scale(0.8, en.body.velocity);
-        if(currentSize < en.size * 1.8){
-          destroyEnemy(en);
-          spawnParticles(en.mesh.position, 0xffaa00, 30);
-          spawnKanji("潰", en.mesh.position, "#fa0");
-        }
-      }
-    });
-    if(currentScale <= 0.05){ removeKekkai(target); spawnParticles(target.mesh.position, 0xffaa00, 10); return; }
-    target.mesh.scale.setScalar(currentScale);
-    // Update collision shapes (approx)
-    const th = 0.5; const hx = (target.initialSize.x * currentScale)/2; const hy=(target.initialSize.y*currentScale)/2; const hz=(target.initialSize.z*currentScale)/2; const hth = th/2;
-    updateBoxShape(target.body, 0, new CANNON.Vec3(hth, hy, hz), new CANNON.Vec3(hx,0,0));
-    updateBoxShape(target.body, 1, new CANNON.Vec3(hth, hy, hz), new CANNON.Vec3(-hx,0,0));
-    updateBoxShape(target.body, 2, new CANNON.Vec3(hx, hth, hz), new CANNON.Vec3(0,hy,0));
-    updateBoxShape(target.body, 3, new CANNON.Vec3(hx, hth, hz), new CANNON.Vec3(0,-hy,0));
-    updateBoxShape(target.body, 4, new CANNON.Vec3(hx, hy, hth), new CANNON.Vec3(0,0,hz));
-    updateBoxShape(target.body, 5, new CANNON.Vec3(hx, hy, hth), new CANNON.Vec3(0,0,-hz));
-    target.body.updateBoundingRadius();
-    target.body.aabbNeedsUpdate = true;
-    target.mesh.material.opacity = 0.3 + (1.0-currentScale)*0.7;
-    requestAnimationFrame(shrinkStep);
-  })();
-}
-function updateBoxShape(body, index, halfExtents, offset){
-  if(!body.shapes[index]) return;
-  body.shapes[index].halfExtents.copy(halfExtents);
-  body.shapes[index].updateConvexPolyhedronRepresentation();
-  body.shapeOffsets[index].copy(offset);
-}
-function spawnKanji(text, pos, color="#4af"){
-  const cvs=document.createElement('canvas'); cvs.width=128; cvs.height=128;
-  const ctx=cvs.getContext('2d'); ctx.font="bold 96px serif"; ctx.fillStyle=color; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(text,64,64);
-  const tex=new THREE.CanvasTexture(cvs);
-  const mat = new THREE.SpriteMaterial({map:tex, transparent:true, depthTest:false});
-  const sp = new THREE.Sprite(mat); sp.position.copy(pos); sp.scale.set(0.001,0.001,0.001); scene.add(sp);
-  let f=0; (function a(){ f+=0.04; const s = Math.min(1, f*2); sp.scale.setScalar(s*0.6); sp.position.y+=0.02; sp.material.opacity = 1-f; if(f<1) requestAnimationFrame(a); else { try{ scene.remove(sp); tex.dispose(); mat.dispose(); } catch(e){} } })();
-}
-function spawnParticles(pos, colorInt, count=14){
-  for(let i=0;i<count;i++){
-    const box = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.12,0.12), new THREE.MeshBasicMaterial({color: colorInt}));
-    box.position.copy(pos); scene.add(box);
-    const v = new THREE.Vector3((Math.random()-0.5),(Math.random()-0.5),(Math.random()-0.5)).multiplyScalar(0.6);
-    (function pAnim(m, vel){ m.position.add(vel); m.scale.multiplyScalar(0.9); m.rotation.x+=0.2; if(m.scale.x>0.02) requestAnimationFrame(()=>pAnim(m, vel)); else { try{ scene.remove(m); m.geometry.dispose(); m.material.dispose(); }catch(e){} } })(box, v);
-  }
-}
-function pulseHUD(text, col="#fff"){ const el=document.getElementById('statusText'); el.textContent=text; el.style.color = col || "#fff"; setTimeout(()=>el.style.color="#f0a", 1500); }
-
-/* ===========================
-   UI / Controls（スマホとVR両対応）
-   =========================== */
-let moveState = { fwd:0, back:0, left:0, right:0 };
-let wantsJump = false;
-['d-up','d-down','d-left','d-right'].forEach(id=>{
-  const el=document.getElementById(id);
-  el.addEventListener('touchstart',(e)=>{ e.preventDefault(); el.classList.add('active'); if(id==='d-up') moveState.fwd=1; if(id==='d-down') moveState.back=1; if(id==='d-left') moveState.left=1; if(id==='d-right') moveState.right=1; });
-  el.addEventListener('touchend',(e)=>{ e.preventDefault(); el.classList.remove('active'); if(id==='d-up') moveState.fwd=0; if(id==='d-down') moveState.back=0; if(id==='d-left') moveState.left=0; if(id==='d-right') moveState.right=0; });
-});
-
-document.getElementById('btnJump').addEventListener('touchstart',(e)=>{ e.preventDefault(); wantsJump=true; });
-document.getElementById('btnMets').addEventListener('touchstart',(e)=>{ e.preventDefault(); metsAction(); });
-document.getElementById('btnKai').addEventListener('touchstart',(e)=>{ e.preventDefault(); const k = pickClosestKekkai(15.0); if(k){ spawnKanji("解", k.mesh.position, "#8f8"); removeKekkai(k); } else pulseHUD("対象なし", "#888"); });
-
-const btnDraw = document.getElementById('btnDraw');
-btnDraw.addEventListener('touchstart',(e)=>{ e.preventDefault(); const t=e.touches[0]; drawStartTouch = {x:t.clientX, y:t.clientY}; startDrawing(); });
-btnDraw.addEventListener('touchmove',(e)=>{ e.preventDefault(); const t=e.touches[0]; updateGhostShape(t.clientX, t.clientY); });
-btnDraw.addEventListener('touchend',(e)=>{ e.preventDefault(); finalizeDrawing(); });
-
-/* カメラ・視点の簡易操作（タッチ） */
-let lastX=0, lastY=0, camYaw=0, camPitch=0;
-renderer.domElement.addEventListener('touchstart', e=>{ if(e.touches.length===1 && !isDrawing){ const t=e.touches[0]; lastX=t.clientX; lastY=t.clientY; } }, {passive:false});
-renderer.domElement.addEventListener('touchmove', e=>{ e.preventDefault(); if(e.touches.length===1 && !isDrawing){ const t=e.touches[0]; const dx=t.clientX-lastX, dy=t.clientY-lastY; camYaw -= dx*0.004; camPitch -= dy*0.004; camPitch = Math.max(-1.4, Math.min(1.4, camPitch)); playerGroup.rotation.y = camYaw; camera.rotation.x = camPitch; lastX=t.clientX; lastY=t.clientY; } }, {passive:false});
-
-/* pickClosest etc. */
-function pickClosestKekkai(range){
-  let best=null, bestD2 = range*range;
-  const px = playerBody.position.x, py=playerBody.position.y, pz=playerBody.position.z;
-  kekkaiList.forEach(k=>{
-    const dx = px - k.body.position.x, dy=py - k.body.position.y, dz=pz - k.body.position.z;
-    const d2 = dx*dx+dy*dy+dz*dz;
-    if(d2 < bestD2){ bestD2 = d2; best = k; }
-  });
-  return best;
-}
-function updateCounts(){
-  document.getElementById('kCount').textContent = kekkaiList.length;
-  document.getElementById('eCount').textContent = enemies.length;
-  document.getElementById('killCount').textContent = killCount;
-  document.getElementById('nextWave').textContent = killsToNextWave;
-  const w = WAVE_INFO[currentWave] || WAVE_INFO[5];
-  document.getElementById('waveVal').textContent = currentWave;
-  document.getElementById('waveName').textContent = w.name;
-}
-
-/* ===========================
-   XR (WebXR) & Controller handling
-   =========================== */
-const controllerModelFactory = new XRControllerModelFactory();
-const controllers = []; // { grip, controller, hand, prevPos, vel, drawingState, ghostRef }
-function buildController(index){
-  const controller = renderer.xr.getController(index);
-  controller.userData.index = index;
-  controller.addEventListener('connected', (ev)=>{
-    controller.userData.inputSource = ev.data;
-  });
-  controller.addEventListener('disconnected', ()=>{ controller.userData.inputSource = null; });
-  scene.add(controller);
-  const grip = renderer.xr.getControllerGrip(index);
-  grip.add(controllerModelFactory.createControllerModel(grip));
-  scene.add(grip);
-  controllers.push({controller, grip, prevPos: new THREE.Vector3(), vel: new THREE.Vector3(), drawing:false, ghost:null});
-  return controllers[controllers.length-1];
-}
-// build two controllers
-buildController(0); buildController(1);
-
-/* XR UI: 設定パネル（シーン内キャンバス） */
-const settingsCanvas = document.createElement('canvas');
-settingsCanvas.width = 512; settingsCanvas.height = 256;
-const settingsCtx = settingsCanvas.getContext('2d');
-function redrawSettings(){
-  settingsCtx.fillStyle = "#001022"; settingsCtx.fillRect(0,0,512,256);
-  settingsCtx.fillStyle = "#fff"; settingsCtx.font = "20px sans-serif"; settingsCtx.fillText("設定パネル", 18, 32);
-  settingsCtx.font = "14px sans-serif";
-  settingsCtx.fillText("移動速度: " + (uiSettings.moveSpeed.toFixed(1)), 18, 70);
-  settingsCtx.fillText("結界最大サイズ: " + uiSettings.maxKekkaiSize, 18, 100);
-  settingsCtx.fillText("スティック感度: " + (uiSettings.stickSensitivity.toFixed(2)), 18, 130);
-  settingsCtx.fillStyle = "#0ff"; settingsCtx.fillText("[クリックで変更] (VRコントローラのトリガーで選択)", 18, 170);
-}
-redrawSettings();
-const settingsTex = new THREE.CanvasTexture(settingsCanvas);
-const settingsMat = new THREE.MeshBasicMaterial({map: settingsTex, side: THREE.DoubleSide});
-const settingsMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8), settingsMat);
-settingsMesh.position.set(0, 2.2, -1.8);
-scene.add(settingsMesh);
-
-/* Raycaster for XR UI */
-const xrRay = new THREE.Raycaster();
-function handleXRUIPress(point){
-  // simple mapping: Y coordinate on canvas changes setting
-  // convert world point to local uv on settingsMesh
-  const local = settingsMesh.worldToLocal(point.clone());
-  const u = (local.x / 1.6 + 0.5) * settingsCanvas.width;
-  const v = ( - local.y / 0.8 + 0.5) * settingsCanvas.height;
-  // toggle values by vertical zones
-  if(v < 90){ uiSettings.moveSpeed = Math.min(12, uiSettings.moveSpeed + 0.5); }
-  else if(v < 140){ uiSettings.maxKekkaiSize = Math.min(12, uiSettings.maxKekkaiSize + 1); }
-  else { uiSettings.stickSensitivity = Math.min(2.0, uiSettings.stickSensitivity + 0.05); }
-  saveSettings(); redrawSettings(); settingsTex.needsUpdate = true;
-}
-
-/* 簡易 UI 設定保存 */
-const uiSettings = { moveSpeed: 6.0, maxKekkaiSize: 6, stickSensitivity: 1.0 };
-function saveSettings(){ try{ localStorage.setItem('kekkai_uiSettings', JSON.stringify(uiSettings)); }catch(e){} }
-function loadSettings(){ try{ const s = localStorage.getItem('kekkai_uiSettings'); if(s){ Object.assign(uiSettings, JSON.parse(s)); } }catch(e){} }
-loadSettings(); redrawSettings(); settingsTex.needsUpdate = true;
-
-/* Motion-based drawing logic:
-   - When controller gamepad.buttons[0] (trigger) is pressed -> start drawing
-   - While pressed, track controller velocity (world) -> map to (x,y,z) scale factors
-   - When released, finalize
-*/
-function updateControllerState(dt){
-  const session = renderer.xr.getSession();
-  if(!session) return;
-  const xrCamera = renderer.xr.getCamera(camera);
-  controllers.forEach(cinfo=>{
-    const inputSource = cinfo.controller.userData.inputSource;
-    if(!inputSource) return;
-    // get grip world position
-    const grip = cinfo.grip;
-    const worldPos = new THREE.Vector3();
-    grip.getWorldPosition(worldPos);
-    // velocity approx
-    cinfo.vel.copy(worldPos).sub(cinfo.prevPos).divideScalar(Math.max(dt, 1e-6));
-    cinfo.prevPos.copy(worldPos);
-    // handle gamepad if present
-    const gp = inputSource.gamepad;
-    if(gp){
-      const btnPressed = gp.buttons[0] && gp.buttons[0].pressed;
-      // start drawing
-      if(btnPressed && !cinfo.drawing){
-        cinfo.drawing = true;
-        // start ghost at forward of controller
-        startDrawingAt(worldPos);
-        cinfo.ghost = ghost;
-      }
-      // while pressed -> update ghost scale based on velocity and controller orientation
-      if(btnPressed && cinfo.drawing){
-        // compute intention vector: use absolute velocities in local controller axes
-        // transform world velocity into controller local space
-        const invMat = new THREE.Matrix4().copy(cinfo.grip.matrixWorld).invert();
-        const localVel = cinfo.vel.clone().applyMatrix4(invMat); // approximate
-        // map localVel.x (right) -> width, localVel.y (up) -> height, localVel.z (forward) -> depth
-        // use sign and magnitude to produce scale multipliers
-        const scaleBase = 1.0;
-        // magnitude influence with sensitivity and clamp
-        const sX = 1 + Math.abs(localVel.x) * 0.12 * uiSettings.stickSensitivity;
-        const sY = 1 + Math.abs(localVel.y) * 0.12 * uiSettings.stickSensitivity;
-        const sZ = 1 + Math.abs(localVel.z) * 0.12 * uiSettings.stickSensitivity;
-        // combine for diagonal when multiple axes large
-        const combined = new THREE.Vector3(sX, sY, sZ);
-        // limit by maxKekkaiSize
-        combined.x = Math.min(uiSettings.maxKekkaiSize, combined.x);
-        combined.y = Math.min(uiSettings.maxKekkaiSize, combined.y);
-        combined.z = Math.min(uiSettings.maxKekkaiSize, combined.z);
-        updateGhostByVector(combined);
-      }
-      // release -> finalize
-      if(!btnPressed && cinfo.drawing){
-        cinfo.drawing = false;
-        finalizeDrawingAt();
-        cinfo.ghost = null;
-      }
-
-      // thumbstick -> movement (assume axes[2]/[3] or axes[0]/[1] depending on controller)
-      // try axes [0,1] as primary stick
-      const axes = gp.axes || [];
-      if(axes.length >= 2){
-        // left controller typically index 0, right 1 but we don't assume — handle both: combine
-        // we use left stick (controller index 0) as movement; get from controllers[0] typically
-      }
-    }
-  });
-}
-
-/* 移動：Gamepadスティック対応（VR） */
-function handleXRMovement(){
-  const session = renderer.xr.getSession();
-  if(!session) return;
-  // prefer left-handed controller for movement (controller index 0)
-  const left = controllers[0];
-  if(!left) return;
-  const src = left.controller.userData.inputSource;
-  if(!src || !src.gamepad) return;
-  const gp = src.gamepad;
-  const ax0 = gp.axes[2] !== undefined ? gp.axes[2] : gp.axes[0]; // axis mapping varies
-  const ax1 = gp.axes[3] !== undefined ? gp.axes[3] : gp.axes[1];
-  const lx = ax0 || 0; const ly = ax1 || 0;
-  // deadzone
-  const dz = 0.18;
-  let moveX = Math.abs(lx) > dz ? lx : 0;
-  let moveY = Math.abs(ly) > dz ? ly : 0;
-  // convert to world movement relative to camera forward but preserve facing (do not rotate playerGroup)
-  if(moveX !== 0 || moveY !== 0){
-    const dir = new THREE.Vector3(); camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
-    const theta = Math.atan2(dir.x, dir.z);
-    // forward/back along theta, left/right perpendicular
-    let vx = 0, vz = 0;
-    // forward uses -moveY (thumbstick up is negative on many controllers)
-    vx += -moveY * Math.sin(theta) * uiSettings.moveSpeed;
-    vz += -moveY * Math.cos(theta) * uiSettings.moveSpeed;
-    vx += moveX * Math.sin(theta + Math.PI/2) * uiSettings.moveSpeed;
-    vz += moveX * Math.cos(theta + Math.PI/2) * uiSettings.moveSpeed;
-    // apply to playerBody velocity but do not rotate view
-    playerBody.velocity.x = vx;
-    playerBody.velocity.z = vz;
-  } else {
-    // slight damping
-    playerBody.velocity.x *= 0.88; playerBody.velocity.z *= 0.88;
-  }
-}
-
-/* XR UI Raycast & Trigger click detection */
-function xrUIPointerTest(){
-  const session = renderer.xr.getSession();
-  if(!session) return;
-  controllers.forEach(cinfo=>{
-    const src = cinfo.controller.userData.inputSource;
-    if(!src) return;
-    const gp = src.gamepad;
-    if(!gp) return;
-    // Ray from controller forward
-    const origin = new THREE.Vector3(), dir = new THREE.Vector3(0,0,-1);
-    cinfo.controller.getWorldPosition(origin);
-    cinfo.controller.getWorldDirection(dir);
-    xrRay.set(origin, dir);
-    const intersects = xrRay.intersectObject(settingsMesh);
-    if(intersects.length > 0){
-      // if trigger pressed this frame -> click
-      if(gp.buttons[0] && gp.buttons[0].pressed && !cinfo._uiPressed){
-        cinfo._uiPressed = true;
-        handleXRUIPress(intersects[0].point);
-      } else if(!(gp.buttons[0] && gp.buttons[0].pressed)){
-        cinfo._uiPressed = false;
-      }
-    }
-  });
-}
-
-/* ===========================
-   メインループ
-   =========================== */
-const clock = new THREE.Clock();
-renderer.setAnimationLoop(()=>{
-  const dt = Math.min(clock.getDelta(), 0.1);
-  world.step(1/60, dt, 5);
-
-  // XR controller updates (movement + drawing)
-  updateControllerState(dt);
-  handleXRMovement();
-  xrUIPointerTest();
-
-  // traditional mobile moveState (if any)
-  const speed = uiSettings.moveSpeed;
-  const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
-  const theta = Math.atan2(dir.x, dir.z);
-  let vx=0, vz=0;
-  if(moveState.fwd){ vx += Math.sin(theta); vz += Math.cos(theta); }
-  if(moveState.back){ vx -= Math.sin(theta); vz -= Math.cos(theta); }
-  if(moveState.left){ vx += Math.sin(theta + Math.PI/2); vz += Math.cos(theta + Math.PI/2); }
-  if(moveState.right){ vx += Math.sin(theta - Math.PI/2); vz += Math.cos(theta - Math.PI/2); }
-  if((vx!==0 || vz!==0) && !renderer.xr.isPresenting){
-    playerBody.velocity.x = vx * speed;
-    playerBody.velocity.z = vz * speed;
-  } else if(!renderer.xr.isPresenting){
-    playerBody.velocity.x *= 0.88; playerBody.velocity.z *= 0.88;
-  }
-
-  // jump
-  if(wantsJump){ if(Math.abs(playerBody.velocity.y) < 0.2) playerBody.velocity.y = 8; wantsJump=false; }
-
-  // sync playerGroup to physics body
-  playerGroup.position.set(playerBody.position.x, playerBody.position.y, playerBody.position.z);
-  camera.position.set(0, 0.6, 0);
-
-  // sync kekkai visuals
-  kekkaiList.forEach(k => { k.mesh.position.copy(k.body.position); k.mesh.quaternion.copy(k.body.quaternion); });
-
-  updateEnemies(dt);
-  renderer.render(scene, camera);
-});
-
-/* ===========================
-   VR セッション開始/終了ハンドラ
-   =========================== */
-const vrBtn = document.getElementById('vrToggle');
-vrBtn.addEventListener('click', async ()=>{
-  if(!isVRMode && navigator.xr){
-    try{
-      const s = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor','bounded-floor','hand-tracking'] });
-      renderer.xr.setSession(s);
-      isVRMode = true; document.getElementById('mobileUI').style.display = 'none'; document.getElementById('hint').textContent = 'VR: トリガーで結界作成、スティックで移動、設定は目の前のパネルで調整';
-      s.addEventListener('end', ()=>{ isVRMode = false; document.getElementById('mobileUI').style.display='flex'; document.getElementById('hint').textContent = 'コントローラ：トリガーで結界作成・スティックで移動（Quest）'; });
-    } catch(e){ console.warn(e); pulseHUD('VR開始に失敗しました', '#f44'); }
-  } else {
-    try{ const sess = renderer.xr.getSession(); if(sess) await sess.end(); }catch(e){}
-  }
-});
-
-/* ===========================
-   初期スポーン等
-   =========================== */
-for(let i=0;i<3;i++) spawnEnemyByWave();
-updateCounts();
-
-/* ウィンドウリサイズ */
-window.addEventListener('resize', ()=>{ camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
-
-/* ===========================
-   補助（スマホドラッグで ghost shape 変更）
-   =========================== */
-let drawStartTouch = null;
-function startDrawing(){
-  if(kekkaiList.length >= KEKKAI_LIMIT){ pulseHUD("結界数が上限です", "#f44"); return; }
-  isDrawing = true; document.getElementById('btnDraw').classList.add('drawing');
-  const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
-  const dist = (drawDistanceMode==="NEAR") ? DIST_NEAR : DIST_FAR;
-  const pos = new THREE.Vector3(playerBody.position.x, playerBody.position.y, playerBody.position.z).add(dir.multiplyScalar(dist));
-  if(pos.y < 1.0) pos.y = 1.0;
-  ghost = new THREE.Mesh(ghostGeo, ghostMat);
-  ghost.position.copy(pos);
-  scene.add(ghost);
-}
-function updateGhostShape(touchX, touchY){
-  if(!ghost || !drawStartTouch) return;
-  const S = 18;
-  const dx = (touchX - drawStartTouch.x)/S;
-  const dy = (drawStartTouch.y - touchY)/S;
-  const sX = Math.max(0.8, 1 + dx);
-  const sY = Math.max(0.8, 1 + dy);
-  ghost.scale.set(sX, sY, sX);
-}
-function finalizeDrawing(){ if(!ghost) return; const pos = ghost.position.clone(); const size = ghost.scale.clone(); scene.remove(ghost); ghost = null; isDrawing=false; document.getElementById('btnDraw').classList.remove('drawing'); createKekkai(pos, size); }
-
-/* ===========================
-   設定の永続化 / その他
-   =========================== */
-function saveSettingsAndNotify(){ saveSettings(); pulseHUD("設定を保存しました", "#0f8"); }
-window.addEventListener('keydown', (e)=>{ if(e.key === 's') saveSettingsAndNotify(); });
-
-/* ===========================
-   最後の補助関数
-   =========================== */
-function spawnKanjiAndLog(text, pos, color){ spawnKanji(text, pos, color); console.log('kanji',text,pos); }
-
-/* ===========================
-   小さなヘルプ：ボタンでの設定変更（モバイル用）
-   =========================== */
-document.getElementById('btnRange').addEventListener('click', toggleRange);
-
-/* ===========================
-   保存したらリロードして即反映
-   =========================== */
-saveSettings();
+<script>
+/* --------------------------
+    第1部：HTML/スタイル読み込み完了
+    次のメッセージで Three.js + WebXR 初期化を送ります
+--------------------------- */
 </script>
+
 </body>
 </html>
+<script type="module">
+/* 第3部：コントローラ / Gamepad / 腕振り判定 / スティック移動 */
+/* 依存: window.__Kekkai (第2部) が存在すること */
+
+const K = window.__Kekkai;
+if(!K) throw new Error('Kekkai core (K) not found. Load Part2 first.');
+
+K.controllers = []; // 各コントローラの状態を入れる配列
+
+/* Controller 構築ユーティリティ */
+function createXRController(index){
+  const controller = K.renderer.xr.getController(index);
+  controller.userData.index = index;
+  // add visual helper (small line) for debugging (only visible in VR)
+  const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-1)]);
+  const mat = new THREE.LineBasicMaterial({ color: 0x00ffcc });
+  const line = new THREE.Line(geometry, mat);
+  line.scale.z = 0.2;
+  controller.add(line);
+
+  // state object
+  const state = {
+    index,
+    controller,
+    grip: K.renderer.xr.getControllerGrip ? K.renderer.xr.getControllerGrip(index) : null,
+    prevPos: new THREE.Vector3(),
+    vel: new THREE.Vector3(),
+    lastFrameTime: performance.now(),
+    drawing: false,
+    triggerPressed: false,
+    lastTriggerPressed: false,
+    thumbstick: { x:0, y:0 },
+    _uiPressed: false
+  };
+  K.scene.add(controller);
+  if(state.grip) K.scene.add(state.grip);
+
+  // store
+  K.controllers[index] = state;
+  return state;
+}
+
+/* build two controllers normally */
+createXRController(0);
+createXRController(1);
+
+/* デッドゾーン & 感度 */
+K.ctrlConfig = {
+  deadzone: 0.18,
+  stickSensitivity: 1.0,
+  drawVelocityScale: 0.12,
+  maxKekkaiScale: 10.0
+};
+
+/* 結界イベントのプレースホルダ（第4部でオーバーライドされる） */
+K.onKekkaiStart = K.onKekkaiStart || function(controllerState, worldPos){
+  // controllerState: object from K.controllers
+  // worldPos: THREE.Vector3 where ghost should start
+  // console.log('Kekkai Start', controllerState.index, worldPos);
+};
+K.onKekkaiUpdate = K.onKekkaiUpdate || function(controllerState, scaleVec){
+  // scaleVec: THREE.Vector3 of intended scales
+  // console.log('Kekkai Update', controllerState.index, scaleVec);
+};
+K.onKekkaiEnd = K.onKekkaiEnd || function(controllerState){
+  // console.log('Kekkai End', controllerState.index);
+};
+
+/* Gamepad/Controller 更新（各フレーム） */
+function updateControllers(dt){
+  const session = K.renderer.xr.getSession ? K.renderer.xr.getSession() : null;
+  for(let i=0;i<K.controllers.length;i++){
+    const s = K.controllers[i];
+    if(!s || !s.controller) continue;
+
+    // get world position
+    const pos = new THREE.Vector3();
+    s.controller.getWorldPosition(pos);
+
+    // compute simple velocity (world)
+    s.vel.copy(pos).sub(s.prevPos).divideScalar(Math.max(dt, 1e-6));
+    s.prevPos.copy(pos);
+
+    // process inputSource/gamepad (if any)
+    const inputSource = s.controller.userData && s.controller.userData.inputSource ? s.controller.userData.inputSource : null;
+
+    // Fallback: try to find matching XR input sources by index from session
+    if(!inputSource && session && session.inputSources && session.inputSources.length > 0){
+      const guess = session.inputSources[i] || session.inputSources[0];
+      if(guess) s.controller.userData.inputSource = guess;
+    }
+
+    const gp = s.controller.userData.inputSource && s.controller.userData.inputSource.gamepad ? s.controller.userData.inputSource.gamepad : null;
+
+    // handle gamepad (trigger and axes)
+    if(gp){
+      // axes mapping: some controllers put primary stick at [0,1], others at [2,3]
+      // prefer (2,3) if present — typical for Oculus
+      const axX = gp.axes.length >= 4 ? gp.axes[2] : gp.axes[0] || 0;
+      const axY = gp.axes.length >= 4 ? gp.axes[3] : gp.axes[1] || 0;
+      // apply deadzone
+      s.thumbstick.x = Math.abs(axX) > K.ctrlConfig.deadzone ? axX * K.ctrlConfig.stickSensitivity : 0;
+      s.thumbstick.y = Math.abs(axY) > K.ctrlConfig.deadzone ? axY * K.ctrlConfig.stickSensitivity : 0;
+
+      // buttons: 0 is usually trigger, 1 is squeeze/grip, others for menu/thumb
+      const trigger = gp.buttons[0] && gp.buttons[0].pressed;
+      s.triggerPressed = !!trigger;
+
+      // trigger down event
+      if(s.triggerPressed && !s.lastTriggerPressed){
+        // start drawing: determine start point slightly in front of controller
+        const forward = new THREE.Vector3(0,0,-1).applyQuaternion(s.controller.quaternion);
+        const startWorld = new THREE.Vector3().copy(pos).add(forward.multiplyScalar(0.2));
+        s.drawing = true;
+        K.onKekkaiStart(s, startWorld);
+      }
+      // while held -> update drawing using velocity in controller local space
+      if(s.triggerPressed && s.drawing){
+        // transform world vel to controller local space
+        const inv = new THREE.Matrix4().copy(s.controller.matrixWorld).invert();
+        const localVel = s.vel.clone().applyMatrix4(inv);
+        // map to positive scale factors using absolute values
+        let sx = 1 + Math.abs(localVel.x) * K.ctrlConfig.drawVelocityScale;
+        let sy = 1 + Math.abs(localVel.y) * K.ctrlConfig.drawVelocityScale;
+        let sz = 1 + Math.abs(localVel.z) * K.ctrlConfig.drawVelocityScale;
+        // clamp by max
+        sx = Math.min(K.ctrlConfig.maxKekkaiScale, sx);
+        sy = Math.min(K.ctrlConfig.maxKekkaiScale, sy);
+        sz = Math.min(K.ctrlConfig.maxKekkaiScale, sz);
+        const scaleVec = new THREE.Vector3(sx, sy, sz);
+        K.onKekkaiUpdate(s, scaleVec);
+      }
+      // trigger up -> finalize
+      if(!s.triggerPressed && s.drawing){
+        s.drawing = false;
+        K.onKekkaiEnd(s);
+      }
+      s.lastTriggerPressed = s.triggerPressed;
+    } // end if gp
+  } // end for
+}
+
+/* スティック移動（カニ歩き維持）: 左コントローラのスティックを想定 */
+/* ここでは移動ベクトルを K.xrMove vector に書き込み、物理/プレイヤーモジュールが利用する */
+K.xrMove = K.xrMove || new THREE.Vector3();
+
+function updateXRMovement(){
+  const left = K.controllers[0];
+  if(!left) return;
+  const src = left.controller.userData && left.controller.userData.inputSource ? left.controller.userData.inputSource : null;
+  if(!src || !src.gamepad) return;
+  const gp = src.gamepad;
+  // axes mapping again
+  const axX = gp.axes.length >= 4 ? gp.axes[2] : gp.axes[0] || 0;
+  const axY = gp.axes.length >= 4 ? gp.axes[3] : gp.axes[1] || 0;
+  const dz = K.ctrlConfig.deadzone;
+  const lx = Math.abs(axX) > dz ? axX : 0;
+  const ly = Math.abs(axY) > dz ? axY : 0;
+  // convert to world movement relative to camera forward but preserve facing
+  if(lx !== 0 || ly !== 0){
+    const forward = new THREE.Vector3();
+    K.camera.getWorldDirection(forward); forward.y = 0; forward.normalize();
+    const theta = Math.atan2(forward.x, forward.z);
+    // forward/back uses -ly (thumb up is -1 on many controllers)
+    const moveX = (-ly) * Math.sin(theta) + (lx) * Math.sin(theta + Math.PI/2);
+    const moveZ = (-ly) * Math.cos(theta) + (lx) * Math.cos(theta + Math.PI/2);
+    // write to K.xrMove (not applying magnitude yet)
+    K.xrMove.set(moveX, 0, moveZ);
+  } else {
+    K.xrMove.set(0,0,0);
+  }
+}
+
+/* フレームに登録する (第2部の K.onFrame を利用) */
+K.onFrame((time, frame)=>{
+  const dt = Math.min((time - (K._lastFrameTime || time))/1000, 0.1);
+  K._lastFrameTime = time;
+  try {
+    updateControllers(dt);
+    updateXRMovement();
+  } catch(e){
+    console.error('controller update error', e);
+  }
+});
+
+/* Expose helpers for debugging in console */
+window.__Kekkai = K;
+console.log('Kekkai controllers module loaded. Controllers count:', K.controllers.length);
+</script>
+<script type="module">
+/* 第4部：結界（ゴースト生成・腕振り判定・確定処理・物理連携） */
+
+const K = window.__Kekkai;
+if(!K) throw new Error('Kekkai core (K) not found. Load Part2/3 first.');
+
+/* 初期化：結界リストとユーティリティが無ければ用意 */
+K.kekkaiList = K.kekkaiList || [];
+K.updateCounts = K.updateCounts || function(){
+  // 簡易DOM更新（もし存在すれば）
+  try{
+    const elK = document.getElementById('kCount'); if(elK) elK.textContent = K.kekkaiList.length;
+    const elE = document.getElementById('eCount'); if(elE) elE.textContent = (K.enemies ? K.enemies.length : 0);
+    const elKill = document.getElementById('killCount'); if(elKill) elKill.textContent = (K.killCount || 0);
+  }catch(e){}
+};
+
+/* ゴースト（仮想結界）素材 */
+const GHOST_MAT = new THREE.MeshStandardMaterial({
+  color: 0x00ccff, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false
+});
+const GHOST_EDGE = new THREE.LineBasicMaterial({ color: 0x88ffff, linewidth: 2 });
+
+/* 設定 */
+K.kekkaiConfig = K.kekkaiConfig || {
+  maxKekkai: 6,
+  lifeMs: 35000,
+  creationScaleClamp: { min: 0.5, max: 12.0 },
+  finalizeScaleEaseMs: 350
+};
+
+/* helper: world point from controller */
+function controllerFrontPoint(controllerState, dist=0.6){
+  const pos = new THREE.Vector3();
+  controllerState.controller.getWorldPosition(pos);
+  const forward = new THREE.Vector3(0,0,-1).applyQuaternion(controllerState.controller.quaternion);
+  return pos.add(forward.multiplyScalar(dist));
+}
+
+/* helper: build ghost */
+function buildGhostAt(pos){
+  const geo = new THREE.BoxGeometry(1,1,1);
+  const mesh = new THREE.Mesh(geo, GHOST_MAT.clone());
+  mesh.position.copy(pos);
+  mesh.castShadow = false; mesh.receiveShadow = false;
+  // edges
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), GHOST_EDGE.clone());
+  mesh.add(edges);
+  return mesh;
+}
+
+/* helper: finalize visual -> actual kekkai */
+function finalizeKekkaiFromGhost(ghostMesh, creatorController){
+  // get world size from scaled unit cube
+  const worldScale = new THREE.Vector3();
+  ghostMesh.getWorldScale(worldScale);
+
+  const size = new THREE.Vector3(worldScale.x, worldScale.y, worldScale.z);
+  // clamp sizes
+  size.x = Math.max(K.kekkaiConfig.creationScaleClamp.min, Math.min(K.kekkaiConfig.creationScaleClamp.max, size.x));
+  size.y = Math.max(K.kekkaiConfig.creationScaleClamp.min, Math.min(K.kekkaiConfig.creationScaleClamp.max, size.y));
+  size.z = Math.max(K.kekkaiConfig.creationScaleClamp.min, Math.min(K.kekkaiConfig.creationScaleClamp.max, size.z));
+
+  // center position
+  const pos = new THREE.Vector3();
+  ghostMesh.getWorldPosition(pos);
+
+  // build final mesh with nicer material
+  const mat = new THREE.MeshPhongMaterial({ color: 0x0088ff, transparent:true, opacity:0.32, emissive:0x003355, side: THREE.DoubleSide });
+  const finalMesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), mat);
+  finalMesh.position.copy(pos);
+  finalMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(finalMesh.geometry), new THREE.LineBasicMaterial({ color: 0x66eeff })));
+  K.scene.add(finalMesh);
+
+  // optional physics: if CANNON available, create body
+  let body = null;
+  if(window.CANNON || window.CANNONES || window.CANNON_WORLD || window.CANNON){
+    try{
+      const C = window.CANNON || window.CANNONES || window.CANNON_WORLD;
+      if(C && C.World){ // basic check for cannon-es-like object
+        // Use cannon-es if available as window.CANNON
+        const cannon = window.CANNON;
+        if(cannon && cannon.Body){
+          const bodyObj = new cannon.Body({ mass: 0, material: (K.matKekkai || undefined) });
+          const hx = size.x/2, hy = size.y/2, hz = size.z/2;
+          // thin wall approach: add 6 thin boxes
+          const th = 0.25;
+          bodyObj.addShape(new cannon.Box(new cannon.Vec3(th, hy, hz)), new cannon.Vec3(hx, 0, 0));
+          bodyObj.addShape(new cannon.Box(new cannon.Vec3(th, hy, hz)), new cannon.Vec3(-hx, 0, 0));
+          bodyObj.addShape(new cannon.Box(new cannon.Vec3(hx, th, hz)), new cannon.Vec3(0, hy, 0));
+          bodyObj.addShape(new cannon.Box(new cannon.Vec3(hx, th, hz)), new cannon.Vec3(0, -hy, 0));
+          bodyObj.addShape(new cannon.Box(new cannon.Vec3(hx, hy, th)), new cannon.Vec3(0, 0, hz));
+          bodyObj.addShape(new cannon.Box(new cannon.Vec3(hx, hy, th)), new cannon.Vec3(0, 0, -hz));
+          bodyObj.position.set(pos.x, pos.y, pos.z);
+          if(K.world && K.world.addBody) K.world.addBody(bodyObj);
+          body = bodyObj;
+        }
+      }
+    }catch(e){
+      console.warn('cannon create failed', e);
+    }
+  }
+
+  const kek = {
+    mesh: finalMesh,
+    body: body, // may be null
+    createdAt: performance.now(),
+    lifeMs: K.kekkaiConfig.lifeMs,
+    initialSize: size.clone(),
+    isShrinking: false
+  };
+
+  K.kekkaiList.push(kek);
+  K.updateCounts();
+
+  // auto-expire
+  setTimeout(()=>{ try{ removeKekkai(kek); }catch(e){} }, kek.lifeMs);
+
+  // small finalize effect
+  spawnFinalizeEffect(pos, size);
+  return kek;
+}
+
+/* remove function */
+function removeKekkai(k){
+  if(!k) return;
+  try{ K.scene.remove(k.mesh); }catch(e){}
+  if(k.body && K.world && K.world.removeBody){ try{ K.world.removeBody(k.body); }catch(e){} }
+  K.kekkaiList = K.kekkaiList.filter(x=>x!==k);
+  K.updateCounts();
+}
+
+/* simple finalize particle effect */
+function spawnFinalizeEffect(pos, size){
+  const count = 12;
+  for(let i=0;i<count;i++){
+    const s = 0.12 + Math.random()*0.18;
+    const geo = new THREE.BoxGeometry(s,s,s);
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xffcc88 }));
+    m.position.copy(pos);
+    K.scene.add(m);
+    const vel = new THREE.Vector3((Math.random()-0.5)*2, Math.random()*1.6, (Math.random()-0.5)*2);
+    (function anim(o, v){
+      o.position.add(v.multiplyScalar(0.06));
+      o.scale.multiplyScalar(0.96);
+      o.rotation.x += 0.1;
+      if(o.scale.x > 0.02) requestAnimationFrame(()=>anim(o, v));
+      else { try{ K.scene.remove(o); o.geometry.dispose(); o.material.dispose(); }catch(e){} }
+    })(m, vel);
+  }
+}
+
+/* attach handlers to K.onKekkaiStart/Update/End provided by previous part */
+let perControllerGhost = new Map(); // controller.index -> { ghostMesh, baseTime }
+
+K.onKekkaiStart = function(controllerState, worldPos){
+  try{
+    // prevent too many kekkai
+    if(K.kekkaiList.length >= K.kekkaiConfig.maxKekkai){
+      if(K.hud && K.hud.statusText) K.hud.statusText.textContent = '結界数上限';
+      return;
+    }
+    // build ghost at worldPos
+    const gm = buildGhostAt(worldPos);
+    gm.scale.set(1,1,1);
+    K.scene.add(gm);
+    perControllerGhost.set(controllerState.index, { ghost: gm, startedAt: performance.now() });
+    if(K.hud && K.hud.statusText) K.hud.statusText.textContent = '結界作成中…';
+  }catch(e){ console.error('onKekkaiStart error', e); }
+};
+
+K.onKekkaiUpdate = function(controllerState, scaleVec){
+  try{
+    const entry = perControllerGhost.get(controllerState.index);
+    if(!entry) return;
+    const ghost = entry.ghost;
+    // We interpret scaleVec (sx,sy,sz) as multipliers. For better UX, apply easing interpolation.
+    // Smooth approach: target = scaleVec; current lerp to target.
+    const cur = ghost.scale;
+    cur.x += (scaleVec.x - cur.x) * 0.3;
+    cur.y += (scaleVec.y - cur.y) * 0.3;
+    cur.z += (scaleVec.z - cur.z) * 0.3;
+    // reposition ghost slightly in front of controller to follow hand
+    const front = controllerFrontPoint(controllerState, 0.4);
+    ghost.position.lerp(front, 0.25);
+
+    // visual feedback: pulsing edge intensity based on magnitude
+    const mag = (cur.x + cur.y + cur.z) / 3;
+    ghost.material.opacity = 0.18 + Math.min(0.6, (mag-1)*0.04);
+  }catch(e){ console.error('onKekkaiUpdate error', e); }
+};
+
+K.onKekkaiEnd = function(controllerState){
+  try{
+    const entry = perControllerGhost.get(controllerState.index);
+    if(!entry) return;
+    const ghost = entry.ghost;
+    // animate finalize: scale to final size smoothly, then convert to solid kekkai
+    const start = performance.now();
+    const duration = Math.max(120, K.kekkaiConfig.finalizeScaleEaseMs);
+    const initialScale = ghost.scale.clone();
+    // determine final scale by clamping
+    const finalScale = new THREE.Vector3(
+      Math.min(K.kekkaiConfig.creationScaleClamp.max, Math.max(K.kekkaiConfig.creationScaleClamp.min, initialScale.x)),
+      Math.min(K.kekkaiConfig.creationScaleClamp.max, Math.max(K.kekkaiConfig.creationScaleClamp.min, initialScale.y)),
+      Math.min(K.kekkaiConfig.creationScaleClamp.max, Math.max(K.kekkaiConfig.creationScaleClamp.min, initialScale.z))
+    );
+    (function easeOutAnim(){
+      const now = performance.now();
+      const t = Math.min(1, (now - start)/duration);
+      const ease = 1 - Math.pow(1 - t, 3);
+      ghost.scale.set(
+        initialScale.x + (finalScale.x - initialScale.x) * ease,
+        initialScale.y + (finalScale.y - initialScale.y) * ease,
+        initialScale.z + (finalScale.z - initialScale.z) * ease
+      );
+      ghost.material.opacity = 0.28 + 0.6 * ease;
+      if(t < 1) requestAnimationFrame(easeOutAnim);
+      else {
+        // finalize: create persistent kekkai and remove ghost
+        const kek = finalizeKekkaiFromGhost(ghost, controllerState);
+        try{ K.scene.remove(ghost); }catch(e){}
+        perControllerGhost.delete(controllerState.index);
+        if(K.hud && K.hud.statusText) K.hud.statusText.textContent = '結界設置済';
+        // optional callback for game logic
+        if(typeof K.onKekkaiPlaced === 'function') try{ K.onKekkaiPlaced(kek, controllerState); }catch(e){}
+      }
+    })();
+  }catch(e){ console.error('onKekkaiEnd error', e); }
+};
+
+/* safety: if session ends while drawing, finalize any ghosts */
+K.renderer.xr.addEventListener && K.renderer.xr.addEventListener('sessionend', ()=>{
+  for(const [idx, entry] of perControllerGhost.entries()){
+    try{ K.onKekkaiEnd({ index: idx }); } catch(e) {}
+  }
+});
+
+/* expose small util to destroy all kekkai (debug) */
+K.clearAllKekkai = function(){
+  while(K.kekkaiList.length) removeKekkai(K.kekkaiList[0]);
+  perControllerGhost.clear();
+  K.updateCounts();
+};
+
+console.log('Kekkai visual & finalize module loaded.');
+
+</script>
+<script type="module">
+/* 第5部：敵AI / Wave管理 / 物理連携（CANNONが無ければ簡易物理） */
+
+const K = window.__Kekkai;
+if(!K) throw new Error('Kekkai core (K) not found. Load previous parts first.');
+
+/* 初期値 */
+K.enemies = K.enemies || [];
+K.killCount = K.killCount || 0;
+K.wave = K.wave || 1;
+K.killsToNextWave = K.killsToNextWave || 3;
+K.MAX_ENEMIES = K.MAX_ENEMIES || 6;
+K.RESPAWN_SECONDS = K.RESPAWN_SECONDS || 8;
+
+/* helper: random range */
+function rand(a,b){ return a + Math.random()*(b-a); }
+
+/* AABB 判定ユーティリティ（Three.jsベース） */
+function boxContainsPoint(boxMesh, point){
+  const box = new THREE.Box3().setFromObject(boxMesh);
+  return box.containsPoint(point);
+}
+
+/* Enemy factory: 物理があればCannon body を作る、無ければ見た目とシンプルな velocity を持たせる */
+function spawnEnemy(){
+  if(K.enemies.length >= K.MAX_ENEMIES) return;
+  const typePool = ['walker','jumper','low_flyer','high_flyer'];
+  const type = (K.wave < 2) ? 'static' : typePool[Math.floor(Math.random()*typePool.length)];
+  const size = 0.5 + Math.random()*0.6;
+  const hue = Math.random();
+  const color = new THREE.Color().setHSL(hue, 0.8, 0.6);
+  const emissive = new THREE.Color().setHSL(hue, 1.0, 0.3);
+  const geo = (Math.random()<0.4) ? new THREE.SphereGeometry(size, 12, 12) : new THREE.BoxGeometry(size*1.2,size*1.2,size*1.2);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness:0.3, emissive, emissiveIntensity:0.6 }));
+  mesh.castShadow = true;
+  // spawn position
+  const angle = Math.random()*Math.PI*2;
+  const dist = 12 + Math.random()*18;
+  const spawnY = (type === 'high_flyer' || type === 'low_flyer') ? (3 + Math.random()*6) : (0.8 + Math.random()*1.8);
+  mesh.position.set(Math.sin(angle)*dist, spawnY, Math.cos(angle)*dist);
+  K.scene.add(mesh);
+
+  // physics branch
+  let body = null;
+  if(window.CANNON && K.world && typeof window.CANNON.Body === 'function'){
+    const C = window.CANNON;
+    body = new C.Body({ mass: 3, shape: new C.Sphere(size), material: K.matEnemy || undefined });
+    body.position.set(mesh.position.x, mesh.position.y, mesh.position.z);
+    body.linearDamping = 0.3;
+    K.world.addBody(body);
+  } else {
+    // fallback: simple velocity vector
+    mesh.userData.vel = new THREE.Vector3(rand(-0.6,0.6), 0, rand(-0.6,0.6));
+  }
+
+  const enemy = {
+    mesh, body, size, type, hp:1, trapped:false, nextMove: performance.now() + rand(0, 1000)
+  };
+  K.enemies.push(enemy);
+  if(typeof K.updateCounts === 'function') K.updateCounts();
+}
+
+/* destroy enemy */
+function destroyEnemy(enemy){
+  try{ K.scene.remove(enemy.mesh); }catch(e){}
+  if(enemy.body && K.world && K.world.removeBody){ try{ K.world.removeBody(enemy.body); }catch(e){} }
+  K.enemies = K.enemies.filter(e => e !== enemy);
+  K.killCount = (K.killCount||0) + 1;
+  K.killsToNextWave = (K.killsToNextWave||3) - 1;
+  if(K.killsToNextWave <= 0) {
+    K.wave = (K.wave||1) + 1;
+    K.killsToNextWave = (K.wave < 5) ? 4 : 8;
+    if(K.hud && K.hud.statusText) K.hud.statusText.textContent = 'WAVE UP! ' + K.wave;
+  }
+  if(typeof K.updateCounts === 'function') K.updateCounts();
+}
+
+/* pick enemies inside a kekkai box (Three.js Box3 contains) */
+function enemiesInsideKekkai(kek){
+  const results = [];
+  const box = new THREE.Box3().setFromObject(kek.mesh);
+  for(const en of K.enemies){
+    if(box.containsPoint(en.mesh.position)) results.push(en);
+  }
+  return results;
+}
+
+/* Wave/Spawn loop helper */
+let lastSpawnAttempt = performance.now();
+K.onFrame((t,f) => {
+  const now = performance.now();
+  if(K.enemies.length < K.MAX_ENEMIES && (now - lastSpawnAttempt) > K.RESPAWN_SECONDS*1000){
+    spawnEnemy(); lastSpawnAttempt = now;
+  }
+});
+
+/* Enemy behavior update (called each frame) */
+function updateEnemyBehavior(dt){
+  const ppos = (K.playerBody && K.playerBody.position) ? new THREE.Vector3(K.playerBody.position.x,K.playerBody.position.y,K.playerBody.position.z) : new THREE.Vector3(0,1.2,0);
+  for(const en of K.enemies.slice()){
+    // sync mesh with body if physics enabled
+    if(en.body){
+      en.mesh.position.set(en.body.position.x, en.body.position.y, en.body.position.z);
+      en.mesh.quaternion.set(en.body.quaternion.x,en.body.quaternion.y,en.body.quaternion.z,en.body.quaternion.w);
+    } else {
+      // fallback: integrate velocity
+      en.mesh.position.add(en.mesh.userData.vel.clone().multiplyScalar(dt*1.0));
+      // basic damping
+      en.mesh.userData.vel.multiplyScalar(0.995);
+    }
+
+    // simple out-of-bounds
+    if(en.mesh.position.y < -20) { destroyEnemy(en); continue; }
+
+    if(en.trapped) continue;
+
+    // AI decisions based on type
+    const toPlayer = new THREE.Vector3().subVectors(ppos, en.mesh.position);
+    const horizontalDist = Math.sqrt(toPlayer.x*toPlayer.x + toPlayer.z*toPlayer.z);
+    const nowt = performance.now();
+    if(nowt > en.nextMove){
+      en.nextMove = nowt + (800 + Math.random()*2000);
+      if(en.type === 'static'){ /* do nothing */ }
+      else if(en.type === 'walker'){
+        // 70% chase, else wander
+        if(Math.random() < 0.7){
+          const dir = toPlayer.clone().setY(0).normalize().multiplyScalar(6);
+          if(en.body) en.body.applyForce(new C.Vec3(dir.x,0,dir.z), en.body.position);
+          else en.mesh.userData.vel.add(dir.multiplyScalar(0.02));
+        } else {
+          en.mesh.userData.vel.add(new THREE.Vector3(rand(-0.5,0.5),0,rand(-0.5,0.5)).multiplyScalar(0.02));
+        }
+      } else if(en.type === 'jumper'){
+        if(Math.random() < 0.75){
+          if(en.mesh.position.y < 2.0){
+            if(en.body) en.body.velocity.y = 8 + Math.random()*3;
+            else en.mesh.position.y += (6 + Math.random()*3) * 0.02;
+          }
+          const dir = toPlayer.clone().setY(0).normalize();
+          if(en.body) en.body.applyForce(new C.Vec3(dir.x*6,0,dir.z*6), en.body.position);
+          else en.mesh.userData.vel.add(dir.multiplyScalar(0.02));
+        }
+      } else if(en.type === 'low_flyer'){
+        const hoverY = 3.0 + Math.sin(nowt*0.002);
+        const dy = hoverY - en.mesh.position.y;
+        if(en.body) en.body.applyForce(new C.Vec3(0, 20*en.body.mass + dy*6, 0), en.body.position);
+        else en.mesh.userData.vel.y = dy*0.02;
+        const dir = toPlayer.clone().setY(0).normalize();
+        if(en.body) en.body.applyForce(new C.Vec3(dir.x*3,0,dir.z*3), en.body.position);
+        else en.mesh.userData.vel.add(dir.multiplyScalar(0.01));
+      } else if(en.type === 'high_flyer'){
+        // 3D chase
+        const dy = (ppos.y + 1.0) - en.mesh.position.y;
+        const dir = toPlayer.clone().normalize();
+        if(en.body) {
+          en.body.applyForce(new C.Vec3(0, 12*en.body.mass, 0), en.body.position);
+          en.body.applyForce(new C.Vec3(dir.x*8, dir.y*8, dir.z*8), en.body.position);
+        } else {
+          en.mesh.userData.vel.add(dir.multiplyScalar(0.02));
+        }
+      }
+    }
+
+    // interaction with kekkai: if inside any kekkai, apply trapped logic
+    for(const k of K.kekkaiList){
+      const box = new THREE.Box3().setFromObject(k.mesh);
+      if(box.containsPoint(en.mesh.position)){
+        // trap
+        en.trapped = true;
+        // slow down / pull to center
+        const center = new THREE.Vector3(k.mesh.position.x, k.mesh.position.y, k.mesh.position.z);
+        const pull = center.clone().sub(en.mesh.position).multiplyScalar(0.2);
+        if(en.body) en.body.applyForce(new C.Vec3(pull.x*5, pull.y*5, pull.z*5), en.body.position);
+        else en.mesh.userData.vel.add(pull.multiplyScalar(0.02));
+        // if the kekkai is shrinking (destroying), kill the enemy
+        if(k.isShrinking){
+          destroyEnemy(en);
+        }
+      }
+    }
+  } // end for
+}
+
+/* register frame updater */
+K.onFrame((t,f) => {
+  const dt = Math.min((t - (K._lastEnemyFrame || t))/1000, 0.1);
+  K._lastEnemyFrame = t;
+  try{
+    updateEnemyBehavior(dt);
+  }catch(e){ console.error('enemy update error', e); }
+});
+
+/* pickClosestKekkai utility */
+function pickClosestKekkai(range){
+  let best = null; let bestD2 = range*range;
+  const px = (K.playerBody && K.playerBody.position) ? K.playerBody.position.x : 0;
+  const py = (K.playerBody && K.playerBody.position) ? K.playerBody.position.y : 1.2;
+  const pz = (K.playerBody && K.playerBody.position) ? K.playerBody.position.z : 0;
+  for(const k of K.kekkaiList){
+    const dx = px - k.mesh.position.x, dy = py - k.mesh.position.y, dz = pz - k.mesh.position.z;
+    const d2 = dx*dx + dy*dy + dz*dz;
+    if(d2 < bestD2){ bestD2 = d2; best = k; }
+  }
+  return best;
+}
+
+/* 滅 (Metsu) アクション: 最寄りの結界を縮小させ、内部の敵を潰す */
+K.metsAction = function(){
+  const target = pickClosestKekkai(30);
+  if(!target) { if(K.hud) K.hud.statusText.textContent = '対象なし'; return; }
+  if(target.isShrinking) return;
+  if(K.hud) K.hud.statusText.textContent = '滅！';
+  target.isShrinking = true;
+  let scale = 1.0;
+  const shrink = ()=>{
+    if(!K.kekkaiList.includes(target)) return;
+    scale -= 0.03;
+    if(scale <= 0.04){
+      // finalize removal
+      removeKekkai(target);
+      return;
+    }
+    // apply visual and logical shrink
+    target.mesh.scale.setScalar(scale);
+    // check enemies inside and damage/destroy
+    const box = new THREE.Box3().setFromObject(target.mesh);
+    for(const en of K.enemies.slice()){
+      if(box.containsPoint(en.mesh.position)){
+        // strong pulling & kill when small enough
+        if(scale < (en.size * 0.6)){
+          destroyEnemy(en);
+        } else {
+          // pull toward center
+          const center = new THREE.Vector3(target.mesh.position.x, target.mesh.position.y, target.mesh.position.z);
+          const pull = center.clone().sub(en.mesh.position).multiplyScalar(0.1);
+          if(en.body) en.body.applyForce(new C.Vec3(pull.x*3, pull.y*3, pull.z*3), en.body.position);
+          else en.mesh.userData.vel.add(pull.multiplyScalar(0.02));
+        }
+      }
+    }
+    requestAnimationFrame(shrink);
+  };
+  shrink();
+};
+
+/* expose pickClosest for other modules and UI */
+K.pickClosestKekkai = pickClosestKekkai;
+
+/* wire mobile UI buttons (if present) */
+try{
+  const metsBtn = document.getElementById('btnMets');
+  if(metsBtn) metsBtn.addEventListener('click', (e)=>{ e.preventDefault(); K.metsAction(); });
+} catch(e){}
+
+/* initial spawning to seed the world */
+for(let i=0;i<3;i++) spawnEnemy();
+
+/* update counts initial */
+if(typeof K.updateCounts === 'function') K.updateCounts();
+
+console.log('Kekkai enemies & wave module loaded.');
+
+</script>
+<script type="module">
+/* 第6部：VR内設定UI（Canvasパネル、Raycast操作、掴み移動、永続化） */
+
+const K = window.__Kekkai;
+if(!K) throw new Error('Kekkai core (K) not found. Load previous parts first.');
+
+/* ---------- UI用Canvas と Mesh の作成 ---------- */
+const UI_CANVAS_W = 1024, UI_CANVAS_H = 512;
+const uiCanvas = document.createElement('canvas');
+uiCanvas.width = UI_CANVAS_W; uiCanvas.height = UI_CANVAS_H;
+const uiCtx = uiCanvas.getContext('2d');
+
+const uiTexture = new THREE.CanvasTexture(uiCanvas);
+uiTexture.encoding = THREE.sRGBEncoding;
+const uiMaterial = new THREE.MeshBasicMaterial({ map: uiTexture, side: THREE.DoubleSide, transparent: false });
+
+const uiPlane = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8), uiMaterial);
+uiPlane.position.set(0, 1.9, -1.4);
+uiPlane.name = 'KekkaiSettingsPanel';
+K.scene.add(uiPlane);
+
+/* 保存キー */
+const STORAGE_KEY = 'kekkai_vr_ui_settings_v1';
+
+/* UI settings model (shared with K.uiSettings used earlier) */
+K.uiSettings = K.uiSettings || {
+  moveSpeed: (K.uiSettings && K.uiSettings.moveSpeed) || 6.0,
+  maxKekkaiSize: (K.uiSettings && K.uiSettings.maxKekkaiSize) || 6,
+  stickSensitivity: (K.uiSettings && K.uiSettings.stickSensitivity) || 1.0,
+  joystickInvert: (K.uiSettings && K.uiSettings.joystickInvert) || false,
+  buttonLayout: (K.uiSettings && K.uiSettings.buttonLayout) || { draw: 'trigger', mets: 'buttonA' }
+};
+
+/* load/save */
+function saveUISettings(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(K.uiSettings)); pulseHUD('設定を保存しました', '#0f8'); }
+  catch(e){ console.warn('save failed', e); pulseHUD('保存に失敗しました', '#f44'); }
+}
+function loadUISettings(){
+  try{
+    const s = localStorage.getItem(STORAGE_KEY);
+    if(s){ Object.assign(K.uiSettings, JSON.parse(s)); }
+  }catch(e){ console.warn('load fail', e); }
+}
+loadUISettings();
+
+/* ---------- 描画ヘルパ（CanvasにUIを描く） ---------- */
+function drawUIPanel(){
+  uiCtx.clearRect(0,0,UI_CANVAS_W, UI_CANVAS_H);
+  // background
+  uiCtx.fillStyle = '#021229'; uiCtx.fillRect(0,0,UI_CANVAS_W,UI_CANVAS_H);
+  // title
+  uiCtx.fillStyle = '#fff'; uiCtx.font = '36px sans-serif'; uiCtx.fillText('結界設定パネル', 28, 48);
+  uiCtx.font = '18px sans-serif'; uiCtx.fillStyle = '#88f';
+  uiCtx.fillText('VR内でトリガーを押して操作。グリップでパネルを掴めます。', 28, 78);
+
+  // Move Speed slider
+  uiCtx.fillStyle = '#ddd'; uiCtx.font = '20px sans-serif';
+  uiCtx.fillText('移動速度', 40, 130);
+  drawSlider(40, 140, 420, 24, 0.5, 12, K.uiSettings.moveSpeed);
+
+  // Max Kekkai Size
+  uiCtx.fillStyle = '#ddd'; uiCtx.fillText('結界最大サイズ', 40, 200);
+  drawSlider(40, 210, 420, 24, 1, 12, K.uiSettings.maxKekkaiSize);
+
+  // Stick Sensitivity
+  uiCtx.fillStyle = '#ddd'; uiCtx.fillText('スティック感度', 40, 280);
+  drawSlider(40, 290, 420, 24, 0.4, 2.5, K.uiSettings.stickSensitivity);
+
+  // Joystick invert toggle
+  uiCtx.fillStyle = '#fff'; uiCtx.fillText('スティック反転', 540, 130);
+  drawToggle(540, 140, K.uiSettings.joystickInvert);
+
+  // Save button
+  drawButton(540, 220, 220, 60, '設定を保存');
+
+  // Reset button
+  drawButton(540, 300, 220, 50, '初期化');
+
+  // Remap placeholder
+  uiCtx.fillStyle = '#fff'; uiCtx.font = '18px sans-serif'; uiCtx.fillText('ボタンリマップ (準備中)', 540, 380);
+
+  uiTexture.needsUpdate = true;
+}
+
+function drawSlider(x,y,w,h,min,max,value){
+  // track
+  uiCtx.fillStyle = '#333'; uiCtx.fillRect(x, y, w, h);
+  // fill
+  const t = (value - min)/(max - min);
+  uiCtx.fillStyle = '#0ff';
+  uiCtx.fillRect(x, y, w * t, h);
+  // knob
+  uiCtx.fillStyle = '#fff';
+  const kx = x + w * t;
+  uiCtx.beginPath(); uiCtx.arc(kx, y + h/2, h*0.9, 0, Math.PI*2); uiCtx.fill();
+  // label
+  uiCtx.fillStyle = '#fff'; uiCtx.font = '18px sans-serif';
+  uiCtx.fillText(value.toFixed(2), x + w + 12, y + h/2 + 6);
+}
+
+function drawToggle(x,y,on){
+  uiCtx.fillStyle = on ? '#0f8' : '#444';
+  uiCtx.fillRect(x, y, 80, 36);
+  uiCtx.fillStyle = '#000'; uiCtx.font = '18px sans-serif';
+  uiCtx.fillText(on ? 'ON' : 'OFF', x + 22, y + 24);
+}
+
+function drawButton(x,y,w,h,label){
+  uiCtx.fillStyle = '#114'; uiCtx.fillRect(x, y, w, h);
+  uiCtx.strokeStyle = '#0ff'; uiCtx.lineWidth = 2; uiCtx.strokeRect(x, y, w, h);
+  uiCtx.fillStyle = '#fff'; uiCtx.font = '20px sans-serif'; uiCtx.fillText(label, x + 18, y + h/2 + 8);
+}
+
+/* 初回描画 */
+drawUIPanel();
+
+/* ---------- パネルインタラクション：RaycasterでUV座標検出 ---------- */
+const uiRaycaster = new THREE.Raycaster();
+const tempVec = new THREE.Vector3();
+const tempMat = new THREE.Matrix4();
+
+function testUIPress(controllerState){
+  // returns { hit:bool, uv:{x,y}, point:Vector3 } if hit
+  const origin = new THREE.Vector3();
+  const dir = new THREE.Vector3(0,0,-1);
+  controllerState.controller.getWorldPosition(origin);
+  controllerState.controller.getWorldDirection(dir);
+  uiRaycaster.set(origin, dir);
+  const intersects = uiRaycaster.intersectObject(uiPlane, true);
+  if(intersects.length === 0) return { hit:false };
+  const I = intersects[0];
+  // local coords on plane
+  const local = uiPlane.worldToLocal(I.point.clone());
+  // Plane geometry is 1.6 x 0.8
+  const u = (local.x / 1.6 + 0.5); // 0..1
+  const v = ( - local.y / 0.8 + 0.5); // 0..1
+  // convert to canvas coords
+  const cx = Math.floor(u * UI_CANVAS_W);
+  const cy = Math.floor(v * UI_CANVAS_H);
+  return { hit:true, uv:{u,v, x:cx, y:cy}, point: I.point.clone() };
+}
+
+/* ---------- クリック処理: canvas座標に基づいて設定を変更 ---------- */
+function handleUIPress(controllerState){
+  const res = testUIPress(controllerState);
+  if(!res.hit) return false;
+  const x = res.uv.x, y = res.uv.y;
+  // detect which control
+  // Move Speed slider region: (40,140)-(460,164)
+  if(y >= 140 && y <= 164 && x >= 40 && x <= 460){
+    // map x to value 0.5..12
+    const t = (x - 40) / (420);
+    K.uiSettings.moveSpeed = Math.round((0.5 + t*(12-0.5)) * 10) / 10;
+    drawUIPanel(); saveUISettingsDebounced();
+    return true;
+  }
+  // Max Kekkai size slider region: (40,210)-(460,234)
+  if(y >= 210 && y <= 234 && x >= 40 && x <= 460){
+    const t = (x - 40) / (420);
+    K.uiSettings.maxKekkaiSize = Math.round((1 + t*(11)) );
+    drawUIPanel(); saveUISettingsDebounced();
+    return true;
+  }
+  // Stick sensitivity: (40,290)-(460,314)
+  if(y >= 290 && y <= 314 && x >= 40 && x <= 460){
+    const t = (x - 40) / 420;
+    K.uiSettings.stickSensitivity = Math.round((0.4 + t*(2.1))*100)/100;
+    drawUIPanel(); saveUISettingsDebounced();
+    return true;
+  }
+  // Joystick invert: (540,140)-(620,176)
+  if(x >= 540 && x <= 620 && y >= 140 && y <= 176){
+    K.uiSettings.joystickInvert = !K.uiSettings.joystickInvert;
+    drawUIPanel(); saveUISettingsDebounced();
+    return true;
+  }
+  // Save button: (540,220)-(760,280)
+  if(x >= 540 && x <= 760 && y >= 220 && y <= 280){
+    saveUISettings();
+    return true;
+  }
+  // Reset button: (540,300)-(760,350)
+  if(x >= 540 && x <= 760 && y >= 300 && y <= 350){
+    // reset to default
+    Object.assign(K.uiSettings, { moveSpeed:6.0, maxKekkaiSize:6, stickSensitivity:1.0, joystickInvert:false });
+    drawUIPanel(); saveUISettings(); return true;
+  }
+  return false;
+}
+
+/* debounced save to avoid excessive localStorage writes */
+let _saveTimer = null;
+function saveUISettingsDebounced(){
+  if(_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(()=>{ saveUISettings(); }, 800);
+}
+
+/* ---------- 掴み（グリップ）でパネル移動 ---------- */
+let panelGrab = { grabbed:false, controllerIndex: -1, offset: new THREE.Vector3() };
+// We detect grip via gamepad.buttons[1] (squeeze) when intersecting the panel
+
+function tryPanelGrab(controllerState){
+  const res = testUIPress(controllerState);
+  if(!res.hit) return false;
+  // set grabbed if squeeze pressed
+  const src = controllerState.controller.userData.inputSource;
+  const gp = src && src.gamepad ? src.gamepad : null;
+  if(gp && gp.buttons[1] && gp.buttons[1].pressed){
+    panelGrab.grabbed = true;
+    panelGrab.controllerIndex = controllerState.index;
+    // compute offset between controller and panel position in local space
+    const ctrlPos = new THREE.Vector3(); controllerState.controller.getWorldPosition(ctrlPos);
+    panelGrab.offset.copy(uiPlane.position).sub(ctrlPos);
+    return true;
+  }
+  return false;
+}
+
+function releasePanelIfNeeded(controllerState){
+  const src = controllerState.controller.userData.inputSource;
+  const gp = src && src.gamepad ? src.gamepad : null;
+  if(panelGrab.grabbed && panelGrab.controllerIndex === controllerState.index){
+    if(!(gp && gp.buttons[1] && gp.buttons[1].pressed)){
+      panelGrab.grabbed = false;
+      panelGrab.controllerIndex = -1;
+    }
+  }
+}
+
+/* per-frame: update panel grab follow and update texture if moved */
+K.onFrame((t,f)=>{
+  if(panelGrab.grabbed){
+    const c = K.controllers[panelGrab.controllerIndex];
+    if(c && c.controller){
+      // set panel position = controller position + offset in world space
+      const ctrlPos = new THREE.Vector3(); c.controller.getWorldPosition(ctrlPos);
+      const newPos = ctrlPos.clone().add(panelGrab.offset);
+      uiPlane.position.lerp(newPos, 0.4);
+      // optional: face the camera smoothly
+      const camPos = new THREE.Vector3(); K.camera.getWorldPosition(camPos);
+      uiPlane.lookAt(camPos.x, uiPlane.position.y, camPos.z);
+    } else {
+      panelGrab.grabbed = false;
+      panelGrab.controllerIndex = -1;
+    }
+  }
+});
+
+/* ---------- VRコントローラのトリガーでUIを操作（クリック検出） ---------- */
+/* We will listen triggers and when pressed we testUIPress and handleUIPress.
+   Need to ensure we don't spam: use per-controller debounce
+*/
+const uiPressCooldown = {};
+K.onFrame((t,f)=>{
+  for(const c of K.controllers){
+    if(!c || !c.controller) continue;
+    const src = c.controller.userData.inputSource;
+    const gp = src && src.gamepad ? src.gamepad : null;
+    if(!gp) continue;
+    const trig = !!(gp.buttons[0] && gp.buttons[0].pressed);
+    if(trig && !uiPressCooldown[c.index]){
+      // first, try grabbing panel if squeeze active
+      tryPanelGrab(c);
+      // then try click
+      const handled = handleUIPress(c);
+      if(handled){
+        uiPressCooldown[c.index] = true;
+        setTimeout(()=>{ uiPressCooldown[c.index] = false; }, 320);
+      }
+    } else if(!trig) {
+      // on release, also check release of grab
+      releasePanelIfNeeded(c);
+    }
+  }
+});
+
+/* ---------- スマホ用（画面上の Save ボタンが押されたら） ---------- */
+try{
+  const saveBtn = document.getElementById('btnRange'); // repurpose as demo save on mobile
+  if(saveBtn){
+    saveBtn.addEventListener('click', ()=>{ saveUISettings(); drawUIPanel(); });
+  }
+}catch(e){}
+
+/* 初期描画 */
+drawUIPanel();
+
+/* expose reposition helper for debugging */
+K.uiPanel = { mesh: uiPlane, canvas: uiCanvas, redraw: drawUIPanel, save: saveUISettings, load: loadUISettings };
+
+console.log('Kekkai VR UI panel loaded.');
+
+/* 最後に HUD反映 */
+if(K.hud && K.hud.statusText) K.hud.statusText.textContent = '設定パネル準備完了';
+</script>
+
+<script type="module">
+/* ===============================================================
+   第4部：腕振り → 歩行速度生成（加速度処理 / リズム検出）
+   =============================================================== */
+
+const K = window.__Kekkai;
+
+/* --- 内部ワークスペース --- */
+K.walk = {
+  accL: { x:0, y:0, z:0, mag:0, history:[], lastZero:0 },
+  accR: { x:0, y:0, z:0, mag:0, history:[], lastZero:0 },
+  periodL: 0.6,
+  periodR: 0.6,
+  speed: 0,
+  targetSpeed: 0,
+  smoothSpeed: 0,
+  t: 0
+};
+
+const MAX_HISTORY = 60;  // 過去 1 秒程度
+const ZERO_THRESHOLD = 0.25; // 揺れゼロ判定
+const PEAK_THRESHOLD = 1.15; // 揺れ強度
+const MIN_PERIOD = 0.25;
+const MAX_PERIOD = 1.1;
+
+function updateAccelFromController(grip, accObj, dt){
+  if(!grip || !grip.rawData) return;
+
+  const a = grip.rawData.acceleration;
+  accObj.x = a.x || 0;
+  accObj.y = a.y || 0;
+  accObj.z = a.z || 0;
+
+  accObj.mag = Math.sqrt(accObj.x**2 + accObj.y**2 + accObj.z**2);
+
+  // 履歴更新
+  accObj.history.push({ t: performance.now()/1000, mag: accObj.mag });
+  if(accObj.history.length > MAX_HISTORY) accObj.history.shift();
+}
+
+function detectRhythm(accObj){
+  const h = accObj.history;
+  if(h.length < 3) return 0;
+
+  const now = h[h.length-1].t;
+
+  // ゼロクロス（揺れの切り替えポイント）
+  const last = h[h.length-1].mag;
+  const prev = h[h.length-2].mag;
+
+  if(prev > ZERO_THRESHOLD && last <= ZERO_THRESHOLD){
+    const period = now - accObj.lastZero;
+    accObj.lastZero = now;
+
+    if(period > MIN_PERIOD && period < MAX_PERIOD){
+      return period;
+    }
+  }
+  return 0;
+}
+
+K.onFrame((t, frame)=>{
+  if(!frame || !K.isXRSessionActive) return;
+
+  const dt = 1/90;
+
+  const inputSources = K.renderer.xr.getSession().inputSources;
+
+  let leftGrip = null;
+  let rightGrip = null;
+
+  for(const s of inputSources){
+    // hand-tracking か controller の両方対応
+    if(s.handedness === 'left'){
+      leftGrip = s.gamepad;
+      K.leftSource = s;
+    }
+    if(s.handedness === 'right'){
+      rightGrip = s.gamepad;
+      K.rightSource = s;
+    }
+  }
+
+  // --- 加速度処理（L/R） ---
+  updateAccelFromController(leftGrip,  K.walk.accL, dt);
+  updateAccelFromController(rightGrip, K.walk.accR, dt);
+
+  const pL = detectRhythm(K.walk.accL);
+  const pR = detectRhythm(K.walk.accR);
+
+  if(pL > 0) K.walk.periodL = pL;
+  if(pR > 0) K.walk.periodR = pR;
+
+  // 揺れの強さ＝ピーク検出
+  const peakL = Math.max(...K.walk.accL.history.map(v=>v.mag)) - 1.0;
+  const peakR = Math.max(...K.walk.accR.history.map(v=>v.mag)) - 1.0;
+
+  const strongL = Math.max(0, peakL / PEAK_THRESHOLD);
+  const strongR = Math.max(0, peakR / PEAK_THRESHOLD);
+
+  // 左右の平均リズム
+  const period = (K.walk.periodL + K.walk.periodR) / 2;
+  const rhythm = 1 / period; // リズムの速さ（周波数）
+
+  // 揺れ強度
+  const strength = (strongL + strongR) / 2;
+
+  // 歩行速度 = 揺れ強度 × リズム
+  const target = strength * rhythm * 1.2; // 1.2 = 歩行調整係数
+  K.walk.targetSpeed = Math.min(target, 2.5); // 上限 2.5 m/s
+
+  // スムージング
+  K.walk.smoothSpeed = K.walk.smoothSpeed * 0.85 + K.walk.targetSpeed * 0.15;
+
+  // --- プレイヤー前進 ---
+  const cam = K.playerGroup;
+  const speed = K.walk.smoothSpeed;
+
+  const dir = new THREE.Vector3();
+  K.camera.getWorldDirection(dir);
+  dir.y = 0;
+  dir.normalize();
+
+  cam.position.addScaledVector(dir, speed * dt);
+
+  // HUD
+  if(K.hud.statusText){
+    K.hud.statusText.textContent =
+      `速度: ${speed.toFixed(2)} m/s | 揺れ ${strength.toFixed(2)} | rhythm ${(rhythm).toFixed(2)}`;
+  }
+});
+</script>
+
+<script type="module">
+/* 第7部（最終まとめ）：
+   - 物理エンジンが無ければ簡易フォールバックを作成
+   - プレイヤー（K.playerBody）を初期化し、XR移動・腕振りの速度・モバイル入力を結合して適用
+   - フレーム毎の統合更新処理（位置同期 / 衝突予防の簡易処理）
+   - デバッグ・ユーティリティ
+   - 初期起動処理を呼び出して安定稼働させる
+*/
+
+const K = window.__Kekkai;
+if(!K) throw new Error('Kekkai core (K) not found. Load previous parts first.');
+
+/* ------------------------
+   1) 物理（CANNON）フォールバック
+   ------------------------ */
+function ensurePhysics(){
+  // If user included cannon-es elsewhere and K.world not set, create cannon world
+  if(window.CANNON && !K.world){
+    try{
+      K.world = new window.CANNON.World();
+      K.world.gravity = new window.CANNON.Vec3(0, -15, 0);
+      K.matDefault = new window.CANNON.Material('default');
+      K.matKekkai = new window.CANNON.Material('kekkai');
+      // contact materials could be added here if needed
+      console.log('CANNON detected — physics world created.');
+    }catch(e){
+      console.warn('CANNON detected but failed to init world', e);
+      K.world = null;
+    }
+  }
+  // If no cannon, we will use a lightweight kinematic fallback
+  if(!K.world){
+    if(!K._fallbackPhysics){
+      K._fallbackPhysics = { actors: [] };
+      console.log('Using fallback physics (no CANNON).');
+    }
+  }
+}
+ensurePhysics();
+
+/* ------------------------
+   2) プレイヤー物体の初期化（K.playerBody）
+   - 既に他で生成されている場合は上書きしない
+   ------------------------ */
+if(!K.playerBody){
+  if(K.world && window.CANNON && typeof window.CANNON.Body === 'function'){
+    // create a cannon body for the player
+    const c = window.CANNON;
+    const pb = new c.Body({
+      mass: 80,
+      shape: new c.Sphere(0.45),
+      material: K.matDefault,
+      fixedRotation: true,
+      linearDamping: 0.9
+    });
+    pb.position.set(0, 1.8, 0);
+    K.world.addBody(pb);
+    K.playerBody = pb;
+    console.log('PlayerBody created with CANNON.');
+  } else {
+    // fallback simple object
+    K.playerBody = {
+      position: { x:0, y:1.8, z:0 },
+      velocity: { x:0, y:0, z:0 },
+      radius: 0.45
+    };
+    console.log('PlayerBody fallback created.');
+  }
+}
+
+/* ------------------------
+   3) 統合更新ループ：K.onFrame に登録する統合処理
+   - XRスティック（K.xrMove） と モバイル moveState と K.walk を合成してプレイヤーに適用
+   - シンプルな地面保持（y座標） & 衝突簡易防止（壁のすり抜け最小対応）
+   ------------------------ */
+
+const integrated = {
+  lastT: performance.now(),
+  groundY: 0.0,
+  moveDamping: 0.88
+};
+
+K.onFrame((time, frame) => {
+  const now = performance.now();
+  const dt = Math.min((now - integrated.lastT)/1000, 0.05);
+  integrated.lastT = now;
+
+  // 1) compute desired movement from sources
+  // XR movement: K.xrMove (vector in world space direction, magnitude pre-normalized)
+  let mx = 0, mz = 0;
+  if(K.xrMove && (K.xrMove.x !== 0 || K.xrMove.z !== 0)){
+    mx += K.xrMove.x * (K.uiSettings ? K.uiSettings.moveSpeed : 6.0);
+    mz += K.xrMove.z * (K.uiSettings ? K.uiSettings.moveSpeed : 6.0);
+  }
+  // mobile moveState (keyboard/touch): moveState on UI
+  if(window.moveState){
+    if(moveState.fwd) { mx += Math.sin(playerYaw()); mz += Math.cos(playerYaw()); }
+    if(moveState.back){ mx -= Math.sin(playerYaw()); mz -= Math.cos(playerYaw()); }
+    if(moveState.left){ mx += Math.sin(playerYaw() + Math.PI/2); mz += Math.cos(playerYaw() + Math.PI/2); }
+    if(moveState.right){ mx += Math.sin(playerYaw() - Math.PI/2); mz += Math.cos(playerYaw() - Math.PI/2); }
+    // normalize mobile contribution to moveSpeed
+    if((moveState.fwd||moveState.back||moveState.left||moveState.right) && K.uiSettings){
+      mx *= K.uiSettings.moveSpeed;
+      mz *= K.uiSettings.moveSpeed;
+    }
+  }
+
+  // walk module contribution (arm-swing generated speed): move forward in camera forward direction
+  if(K.walk && K.walk.smoothSpeed){
+    const dir = new THREE.Vector3();
+    K.camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
+    mx += dir.x * K.walk.smoothSpeed;
+    mz += dir.z * K.walk.smoothSpeed;
+  }
+
+  // apply to playerBody (CANNON or fallback)
+  if(K.playerBody && K.playerBody.position && K.playerBody.velocity !== undefined){
+    // cannon body
+    if(K.playerBody.position.x !== undefined && K.playerBody instanceof window.CANNON.Body){
+      // use velocity set (smooth)
+      K.playerBody.velocity.x = mx;
+      K.playerBody.velocity.z = mz;
+      // ground check: keep y >= groundY
+      if(K.playerBody.position.y < integrated.groundY + 0.1){
+        K.playerBody.position.y = integrated.groundY + 0.1;
+        K.playerBody.velocity.y = Math.max( K.playerBody.velocity.y, 0 );
+      }
+    } else {
+      // fallback object with simple integration
+      K.playerBody.velocity.x = mx;
+      K.playerBody.velocity.z = mz;
+      // integrate
+      K.playerBody.position.x += K.playerBody.velocity.x * dt;
+      K.playerBody.position.z += K.playerBody.velocity.z * dt;
+      // gravity-like effect and floor
+      K.playerBody.velocity.y -= 9.8 * dt;
+      K.playerBody.position.y += K.playerBody.velocity.y * dt;
+      if(K.playerBody.position.y < integrated.groundY + 0.1){
+        K.playerBody.position.y = integrated.groundY + 0.1;
+        K.playerBody.velocity.y = 0;
+      }
+    }
+  }
+
+  // sync playerGroup (Three.js) to playerBody
+  if(K.playerBody){
+    if(K.playerBody instanceof window.CANNON.Body){
+      K.playerGroup.position.set(K.playerBody.position.x, K.playerBody.position.y, K.playerBody.position.z);
+    } else {
+      K.playerGroup.position.set(K.playerBody.position.x, K.playerBody.position.y, K.playerBody.position.z);
+    }
+  }
+
+  // small collision avoidance: push back enemies that intersect player radius (fallback)
+  if(K.enemies && K.enemies.length){
+    const px = K.playerGroup.position.x, pz = K.playerGroup.position.z;
+    for(const e of K.enemies){
+      const ex = e.mesh.position.x, ez = e.mesh.position.z;
+      const dx = ex - px, dz = ez - pz;
+      const d2 = dx*dx + dz*dz;
+      const minR = (e.size || 0.5) + (K.playerBody.radius || 0.45);
+      if(d2 < (minR*minR)){
+        const d = Math.sqrt(d2) || 0.001;
+        const push = (minR - d) * 0.5;
+        e.mesh.position.x += (dx/d) * push;
+        e.mesh.position.z += (dz/d) * push;
+        if(e.body) { e.body.position.x = e.mesh.position.x; e.body.position.z = e.mesh.position.z; }
+      }
+    }
+  }
+
+  // ensure UI canvas texture updates if settings changed externally
+  if(K.uiPanel && K.uiPanel.redraw) {
+    // optional: update only periodically - here we update every second tick to reduce cost
+    if(!K._uiTick) K._uiTick = 0;
+    K._uiTick = (K._uiTick + 1) % 10;
+    if(K._uiTick === 0) K.uiPanel.redraw();
+  }
+});
+
+/* helper: read player's yaw (we keep camera rotation in playerGroup.rotation.y) */
+function playerYaw(){
+  return K.playerGroup ? K.playerGroup.rotation.y : 0;
+}
+
+/* ------------------------
+   4) デバッグユーティリティ
+   ------------------------ */
+K.debug = K.debug || {};
+K.debug.printState = function(){
+  console.log('=== KEKKAI STATE ===');
+  console.log('XR Session Active:', K.isXRSessionActive);
+  console.log('Controllers:', (K.controllers||[]).length);
+  console.log('Player pos:', K.playerBody && (K.playerBody.position ? (K.playerBody.position.x + ',' + K.playerBody.position.y + ',' + K.playerBody.position.z) : K.playerBody));
+  console.log('Kekkai count:', (K.kekkaiList||[]).length);
+  console.log('Enemies count:', (K.enemies||[]).length);
+  console.log('UI settings:', K.uiSettings);
+};
+K.debug.clearAll = function(){ K.clearAllKekkai && K.clearAllKekkai(); while(K.enemies && K.enemies.length) { try{ K.scene.remove(K.enemies[0].mesh); K.enemies.shift(); }catch(e){ break; } } };
+
+/* ------------------------
+   5) 自動起動＆安全措置
+   - 確実に K.startMainLoop は回っている想定（第2部で開始済み）
+   - 必要なら physics world stepping を行う
+   ------------------------ */
+(function startUp(){
+  // Ensure physics world steps if exists
+  if(K.world && typeof K.world.step === 'function'){
+    // register stepping in main loop at 60Hz
+    K.onFrame((t,f) => {
+      // step by fixed dt
+      try{
+        K.world.step(1/60);
+      }catch(e){ console.warn('physics step error', e); }
+    });
+    console.log('Physics stepping registered.');
+  } else {
+    console.log('No physics world: skipping physics stepping.');
+  }
+
+  // ensure a handful of debug enemies exist if none
+  if(!K.enemies || K.enemies.length === 0){
+    // create 2 seed enemies
+    if(typeof K.spawnEnemy === 'function'){
+      K.spawnEnemy && K.spawnEnemy();
+      K.spawnEnemy && K.spawnEnemy();
+    } else {
+      // fallback: use the spawnEnemy from part5 if attached to K; otherwise do nothing
+    }
+  }
+
+  // final HUD message
+  if(K.hud && K.hud.statusText) K.hud.statusText.textContent = 'ゲーム起動済み — VRであるならVRボタンを押して開始';
+})();
+
+/* ------------------------
+   6) 貼り付けガイド（必ずこの順番でファイルを作ってください）
+   - 第1部: HTML + CSS (既に貼ったもの)
+   - 第2部: Three.js + WebXR 初期化
+   - 第3部: Controller / Gamepad / 腕振り判定基盤
+   - 第4部: 結界実装（ゴースト → finalize）
+   - 第5部: 敵AI / Wave / 物理連携
+   - 第6部: VR内設定UI
+   - 第4部(加速度歩行) : ※もし別途貼っているなら腕振り→歩行モジュールも（あなたは既に貼ってます）
+   - 第7部: このスクリプト（起動 & 統合） ← いまここ
+   ------------------------ */
+
+console.log('Kekkai finalizer loaded. You can call K.debug.printState() in console.');
+
+</script>
