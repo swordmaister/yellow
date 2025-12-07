@@ -2,541 +2,279 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
+<title>真・結界師VR — ダブルスロープ版</title>
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover, user-scalable=no">
-<title>真・結界師VR — フル統合版</title>
 <style>
-  html,body{height:100%;margin:0;background:#000;color:#fff;font-family:sans-serif;overflow:hidden;touch-action:none}
-  canvas{display:block}
-  #hud { position: fixed; left: 12px; top: 12px; background: rgba(0,10,30,0.6); border:1px solid #4af; padding:8px; border-radius:8px; font-size:13px; width:260px; z-index:20; pointer-events:none; }
-  #mobileUI { position: fixed; bottom:16px; width:100%; display:flex; justify-content:center; gap:12px; z-index:30; pointer-events:auto; }
-  .m_btn{ padding:12px 16px; border-radius:8px; background:rgba(255,255,255,0.06); color:#fff; border:1px solid rgba(255,255,255,0.12); }
-  #vrToggle { position: fixed; top: 12px; right: 12px; z-index:101; padding:8px 12px; background:#222; border-radius:6px; border:1px solid #fff; color:#fff; cursor:pointer; }
-  #hint { position: fixed; left:50%; transform:translateX(-50%); bottom:8px; padding:6px 10px; background: rgba(0,0,0,0.6); border-radius:8px; pointer-events:none; z-index:102; font-size:13px; }
+  html, body { height: 100%; margin: 0; background: #87CEEB; color: #fff; font-family: sans-serif; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #error-log { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); color:#ff5555; padding:20px; z-index:9999; white-space:pre-wrap; font-weight:bold; overflow:auto; }
+  #hud { position: fixed; top: 16px; left: 16px; pointer-events: none; z-index: 10; }
+  @supports (padding-top: env(safe-area-inset-top)) { #hud { top: calc(env(safe-area-inset-top) + 10px); left: calc(env(safe-area-inset-left) + 16px); } }
+  .hud-box { background: rgba(0, 30, 60, 0.7); padding: 8px 16px; border-radius: 8px; border: 2px solid rgba(255,255,255,0.3); margin-bottom: 8px; backdrop-filter: blur(4px); }
+  .big-text { font-size: 18px; font-weight: bold; color: #ffeb3b; text-shadow: 1px 1px 2px #000; }
+  .sub-text { font-size: 14px; color: #e0e0e0; }
+  #msgArea { position: fixed; top: 35%; left: 0; width: 100%; text-align: center; pointer-events: none; z-index: 20; }
+  .flash-msg { font-size: 40px; font-weight: 900; color: #fff; text-shadow: 0 0 10px #f0a, 2px 2px 0 #000; opacity: 0; transition: opacity 0.3s; }
+  #uiLayer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 100; }
+  #stickZone { position: absolute; bottom: 40px; left: 40px; width: 140px; height: 140px; pointer-events: auto; margin-bottom: env(safe-area-inset-bottom); margin-left: env(safe-area-inset-left); }
+  .stick-base { width: 100%; height: 100%; background: rgba(255,255,255,0.2); border: 2px solid rgba(255,255,255,0.5); border-radius: 50%; position: relative; }
+  .stick-knob { width: 60px; height: 60px; background: #fff; border-radius: 50%; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); box-shadow: 0 4px 10px rgba(0,0,0,0.3); pointer-events: none; }
+  #padArea { position: absolute; bottom: 40px; right: 40px; width: 200px; height: 200px; pointer-events: none; margin-bottom: env(safe-area-inset-bottom); margin-right: env(safe-area-inset-right); }
+  .btn { position: absolute; width: 65px; height: 65px; z-index: 10; border-radius: 50%; border: 2px solid rgba(255,255,255,0.6); background: rgba(40,50,80,0.8); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; pointer-events: auto; touch-action: manipulation; transition: transform 0.1s; }
+  .btn:active { transform: scale(0.9); background: rgba(60,70,100,0.9); }
+  #btnUp { top: 0; left: 50%; transform: translateX(-50%); background: linear-gradient(135deg, #607d8b, #455a64); }
+  #btnDown { bottom: 0; left: 50%; transform: translateX(-50%); background: linear-gradient(135deg, #9c27b0, #7b1fa2); width: 75px; height: 75px; font-size: 16px; }
+  #btnLeft { top: 50%; left: 0; transform: translateY(-50%); background: linear-gradient(135deg, #f44336, #c62828); }
+  #btnRight { top: 50%; right: 0; transform: translateY(-50%); background: linear-gradient(135deg, #03a9f4, #0288d1); width: 75px; height: 75px; font-size: 18px; }
+  #btnRight.drawing { background: #fff; color: #0288d1; transform: translateY(-50%) scale(1.1); }
+  @media (orientation: portrait) {
+    #stickZone { width: 120px; height: 120px; bottom: 20px; left: 20px; } .stick-knob { width: 50px; height: 50px; }
+    #padArea { width: 170px; height: 170px; bottom: 20px; right: 20px; } .btn { width: 55px; height: 55px; font-size: 10px; }
+    #btnDown, #btnRight { width: 65px; height: 65px; } .big-text { font-size: 16px; } .sub-text { font-size: 12px; }
+  }
+  #centerReticle { position: fixed; top: 50%; left: 50%; width: 6px; height: 6px; background: rgba(255,255,255,0.8); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; border: 1px solid rgba(0,0,0,0.5); }
+  #vrBtn { position: fixed; top: 10px; right: 10px; padding: 8px 16px; background: rgba(0,0,0,0.8); border: 2px solid #fff; color: #fff; border-radius: 6px; z-index: 200; pointer-events: auto; font-weight: bold; cursor: pointer; }
 </style>
+<script>
+  window.onerror = function(msg, url, line) {
+    const box = document.getElementById('error-log'); box.style.display = 'block'; box.textContent += "Error: " + msg + "\nLine: " + line + "\n"; return false;
+  };
+</script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js"
+  }
+}
+</script>
 </head>
 <body>
-  <div id="hud">
-    <div>WAVE <span id="waveVal">1</span> : <span id="waveName">静寂</span></div>
-    <div>撃破: <span id="killCount">0</span> 次: <span id="nextWave">3</span></div>
-    <div>結界: <span id="kCount">0</span> / <span id="kLimit">6</span></div>
-    <div id="statusText" style="color:#f0a;margin-top:6px;font-weight:bold;">準備中…</div>
+<div id="error-log"></div>
+<div id="hud">
+  <div class="hud-box"><span class="big-text" id="waveVal">WAVE 1</span><br><span class="sub-text">撃破: <span id="killVal">0</span> / 残: <span id="targetVal" style="color:#f88; font-weight:bold;">3</span></span></div>
+  <div class="hud-box"><span class="sub-text">結界: <span id="kekVal" style="color:#00bfff; font-weight:bold;">0</span>/5</span></div>
+</div>
+<div id="msgArea"><div id="flashMsg" class="flash-msg"></div></div>
+<div id="centerReticle"></div>
+<button id="vrBtn">VR START</button>
+<div id="uiLayer">
+  <div id="stickZone"><div class="stick-base"><div id="stickKnob" class="stick-knob"></div></div></div>
+  <div id="padArea">
+    <div id="btnUp" class="btn">距離<br><span id="distLabel" style="color:#fe0">近</span></div>
+    <div id="btnLeft" class="btn">滅<br><span style="font-size:10px">⇔解</span></div>
+    <div id="btnRight" class="btn">結<br><span style="font-size:10px">Hold</span></div>
+    <div id="btnDown" class="btn">跳</div>
   </div>
-
-  <div id="mobileUI">
-    <button id="mDraw" class="m_btn">結界作成</button>
-    <button id="mMets" class="m_btn">滅</button>
-    <button id="mKai" class="m_btn">解</button>
-  </div>
-
-  <div id="vrToggle">VRモード</div>
-  <div id="hint">トリガー長押しで結界作成・スティックで移動（Quest）</div>
-
+</div>
 <script type="module">
-/* ============================
-   フル統合版：Single-module
-   - Three.js (module) & VRButton
-   - cannon-es optional (物理有効時)
-   - VR controllers: trigger=draw, stick=move
-   - arm-swing歩行補助
-   - kekkai create/update/finalize
-   - enemies & wave
-   - VR settings panel (canvas)
-   ============================ */
+import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
 
-/* ---- imports ---- */
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js';
-import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/webxr/VRButton.js';
-import { XRControllerModelFactory } from 'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/webxr/XRControllerModelFactory.js';
-/* cannon-es optional: dynamically load if available */
-let CANNON = null;
-try{
-  // try to import cannon-es dynamically — if blocked by CORS, fallback is used
-  const mod = await import('https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js');
-  CANNON = mod;
-  console.log('cannon-es loaded');
-}catch(e){
-  console.log('cannon-es not available or failed to load; using fallback physics');
+const CFG={colors:{sky:0x87CEEB,ground:0xC2B280,kekkai:0x00bfff,ghost:0x00ffaa,marker:0xff0000,wall:0xa0a0a0,building:0xf0f0f0,pool:0x88cccc},player:{speed:12.0,jump:22.0,height:1.7},kekkai:{max:5},dist:{near:8.0,far:20.0},field:{width:120,depth:160}};
+let scene,camera,renderer,world,playerBody,playerGroup,enemies=[],kekkaiList=[],gameState={wave:1,kills:0,req:3,nextSpawn:0},currentDist=CFG.dist.near,aimMarker;
+const els={stick:document.getElementById('stickZone'),knob:document.getElementById('stickKnob'),msg:document.getElementById('flashMsg'),btnDist:document.getElementById('btnUp'),btnJump:document.getElementById('btnDown'),btnAct:document.getElementById('btnLeft'),btnDraw:document.getElementById('btnRight'),distLabel:document.getElementById('distLabel'),wVal:document.getElementById('waveVal'),kVal:document.getElementById('killVal'),tVal:document.getElementById('targetVal'),kekVal:document.getElementById('kekVal')};
+
+let drawId=null, drawState={active:false,startX:0,startY:0,ghost:null}, input={x:0,y:0}, camAngle={yaw:0,pitch:0};
+let stickId=null, stickStart={x:0,y:0}, tapTime=0, tapPos={x:0,y:0}, actId=null, actStartPos={x:0,y:0}, lookId=null, lastLook={x:0,y:0};
+
+function init(){
+  try {
+    scene=new THREE.Scene(); scene.background=new THREE.Color(CFG.colors.sky); scene.fog=new THREE.FogExp2(CFG.colors.sky,0.005);
+    camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,200);
+    playerGroup=new THREE.Group(); playerGroup.add(camera); camera.position.set(0,CFG.player.height,0); scene.add(playerGroup);
+    renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setSize(innerWidth,innerHeight); renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap; renderer.xr.enabled=true; document.body.appendChild(renderer.domElement);
+    world=new CANNON.World(); world.gravity.set(0,-30,0);
+    const mDef=new CANNON.Material('def'),mPly=new CANNON.Material('ply'),mEne=new CANNON.Material('ene'),mKek=new CANNON.Material('kek');
+    world.addContactMaterial(new CANNON.ContactMaterial(mPly,mDef,{friction:0.0,restitution:0.0}));
+    world.addContactMaterial(new CANNON.ContactMaterial(mEne,mDef,{friction:0.5,restitution:0.3}));
+    world.addContactMaterial(new CANNON.ContactMaterial(mKek,mEne,{friction:0.1,restitution:0.8}));
+    playerBody=new CANNON.Body({mass:70,shape:new CANNON.Sphere(0.6),material:mPly,fixedRotation:true,linearDamping:0.9}); playerBody.position.set(0,5,30); world.addBody(playerBody);
+    setupEnvironment(mDef);
+    const aimGeo=new THREE.SphereGeometry(0.3,16,16),aimMat=new THREE.MeshBasicMaterial({color:CFG.colors.marker,transparent:true,opacity:0.7,depthTest:false});
+    aimMarker=new THREE.Mesh(aimGeo,aimMat); aimMarker.renderOrder=999; scene.add(aimMarker);
+    setupInputs(); for(let i=0;i<3;i++)spawnEnemy(); renderer.setAnimationLoop(loop);
+  } catch(e) { console.error(e); alert("初期化エラー: " + e.message); }
 }
 
-/* Global state container */
-const K = window.__Kekkai = window.__Kekkai || {};
-K.scene = new THREE.Scene();
-K.scene.background = new THREE.Color(0x051133);
-K.scene.fog = new THREE.FogExp2(0x051133, 0.012);
+function setupEnvironment(mat){
+  const sun=new THREE.DirectionalLight(0xffffee,1.2); sun.position.set(-50,100,50); sun.castShadow=true; sun.shadow.mapSize.set(2048,2048); sun.shadow.camera.left=-100; sun.shadow.camera.right=100; sun.shadow.camera.top=100; sun.shadow.camera.bottom=-100; scene.add(sun); scene.add(new THREE.AmbientLight(0x555566,0.6));
+  const gGeo=new THREE.PlaneGeometry(CFG.field.width+40,CFG.field.depth+40); const gMat=new THREE.MeshStandardMaterial({color:CFG.colors.ground,roughness:0.9});
+  const ground=new THREE.Mesh(gGeo,gMat); ground.rotation.x=-Math.PI/2; ground.receiveShadow=true; scene.add(ground);
+  const gBody=new CANNON.Body({mass:0,material:mat}); gBody.addShape(new CANNON.Plane()); gBody.quaternion.setFromEuler(-Math.PI/2,0,0); world.addBody(gBody);
+  const createBox=(x,y,z,w,h,d,col,tr=false,op=1)=>{
+    const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshStandardMaterial({color:col,transparent:tr,opacity:op})); m.position.set(x,y,z); m.castShadow=!tr; m.receiveShadow=true; scene.add(m);
+    const b=new CANNON.Body({mass:0,material:mat}); b.addShape(new CANNON.Box(new CANNON.Vec3(w/2,h/2,d/2))); b.position.copy(m.position); world.addBody(b); return m;
+  };
+  const FW=CFG.field.width,FD=CFG.field.depth,WH=8;
+  createBox(0,WH/2,FD/2+1,FW+2,WH,2,CFG.colors.wall); createBox(-FW/2-1,WH/2,0,2,WH,FD+2,CFG.colors.wall); createBox(FW/2+1,WH/2,0,2,WH,FD+2,CFG.colors.wall);
+  const bH=30,bZ=-FD/2-20; createBox(0,bH/2,bZ,FW,bH,40,CFG.colors.building);
+  for(let i=-FW/2+5;i<FW/2;i+=10)for(let j=5;j<28;j+=7){const w=new THREE.Mesh(new THREE.PlaneGeometry(4,4),new THREE.MeshBasicMaterial({color:0x87CEFA})); w.position.set(i,j,bZ+20+0.1); scene.add(w);}
+  
+  // --- 校舎のダブルスロープ (左右対称) ---
+  // stStartX -> stEndX. 
+  // 右スロープ: X= 5(登り口) -> X= 55(屋上)
+  // 左スロープ: X=-5(登り口) -> X=-55(屋上)
+  const stW=8, stRise=30, stZ=bZ+20+stW/2;
+  const slopeThickness=1.0, midY=stRise/2 - slopeThickness/2;
+  
+  const createSlope = (startX, endX) => {
+    const run = Math.abs(endX - startX);
+    const len = Math.sqrt(run*run + stRise*stRise);
+    const ang = Math.atan2(stRise, run);
+    const midX = (startX + endX)/2;
+    // 物理
+    const b=new CANNON.Body({mass:0,material:mat});
+    b.addShape(new CANNON.Box(new CANNON.Vec3(len/2, slopeThickness/2, stW/2)));
+    b.position.set(midX, midY, stZ);
+    // 右へ登るか左へ登るかで回転方向が変わる
+    // 右スロープ(5->55): 右(+X)へ登る -> Z軸回転 +ang
+    // 左スロープ(-5->-55): 左(-X)へ登る -> Z軸回転 -ang
+    const dir = (endX > startX) ? 1 : -1; 
+    b.quaternion.setFromEuler(0, 0, dir * ang);
+    world.addBody(b);
+    
+    // メッシュ
+    const m=new THREE.Mesh(new THREE.BoxGeometry(len,slopeThickness,stW), new THREE.MeshStandardMaterial({color:0xdddddd}));
+    m.position.copy(b.position); m.quaternion.copy(b.quaternion); m.receiveShadow=true; m.castShadow=true; scene.add(m);
+    
+    // 手すり
+    const r=new THREE.Mesh(new THREE.BoxGeometry(len,0.5,0.2), new THREE.MeshStandardMaterial({color:0x888888}));
+    r.position.copy(b.position);
+    r.position.add(new THREE.Vector3(0, slopeThickness/2+2.0, 0).applyEuler(new THREE.Euler(0,0,dir*ang)));
+    r.position.z += stW/2 - 0.2; r.quaternion.copy(b.quaternion); scene.add(r);
 
-/* Renderer & camera & playerGroup */
-K.camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.01, 200);
-K.playerGroup = new THREE.Group();
-K.playerGroup.add(K.camera);
-K.scene.add(K.playerGroup);
+    // 踊り場 (登り口)
+    const landW=6;
+    // スタート側の少し手前
+    const landX1 = startX - dir*(landW/2);
+    createBox(landX1, 0.25, stZ, landW, 0.5, stW, 0xdddddd);
+    
+    // 踊り場 (降り口/屋上)
+    const landX2 = endX + dir*(landW/2);
+    createBox(landX2, stRise, stZ, landW, 0.5, stW, 0xdddddd);
+    
+    // ブリッジ (屋上へ)
+    createBox(landX2, stRise, (stZ+(bZ+20))/2-10, landW, 0.5, 25, 0xdddddd);
+    
+    // 降り口手すり
+    // 突き当たり
+    createBox(landX2 + dir*(landW/2), stRise+1.5, stZ, 0.2, 3, stW, 0x888888);
+    // 外側
+    createBox(landX2, stRise+1.5, stZ+stW/2, landW, 3, 0.2, 0x888888);
+  };
 
-K.renderer = new THREE.WebGLRenderer({ antialias:true });
-K.renderer.setSize(innerWidth, innerHeight);
-K.renderer.outputEncoding = THREE.sRGBEncoding;
-K.renderer.xr.enabled = true;
-K.renderer.shadowMap.enabled = true;
-document.body.appendChild(K.renderer.domElement);
+  createSlope(5, 55);   // 右スロープ
+  createSlope(-5, -55); // 左スロープ
 
-/* VR button */
-document.body.appendChild(VRButton.createButton(K.renderer));
+  // 屋上柵
+  const rY=bH, rW=FW, rD=40; 
+  createBox(0,rY+1,bZ-rD/2,rW,2,0.5,0x888888); 
+  createBox(-rW/2,rY+1,bZ,0.5,2,rD,0x888888); 
+  createBox(rW/2,rY+1,bZ,0.5,2,rD,0x888888);
+  
+  // 柵の開口部 (左右のブリッジ接続部を開ける)
+  // 右降り口: X = 55付近 (52~58)
+  // 左降り口: X = -55付近 (-58~-52)
+  const gateW = 8;
+  const rightGateX = 55;
+  const leftGateX = -55;
+  // 中央の柵
+  const centerFenceW = (rightGateX - gateW/2) - (leftGateX + gateW/2);
+  createBox(0, rY+1, bZ+rD/2, centerFenceW, 2, 0.5, 0x888888);
+  // 左端の柵
+  const leftFenceW = (leftGateX - gateW/2) - (-rW/2);
+  createBox(-rW/2 + leftFenceW/2, rY+1, bZ+rD/2, leftFenceW, 2, 0.5, 0x888888);
+  // 右端の柵
+  const rightFenceW = (rW/2) - (rightGateX + gateW/2);
+  createBox(rW/2 - rightFenceW/2, rY+1, bZ+rD/2, rightFenceW, 2, 0.5, 0x888888);
 
-/* Lights */
-const hemi = new THREE.HemisphereLight(0x8888ff, 0x222233, 0.8); K.scene.add(hemi);
-const dir = new THREE.DirectionalLight(0xddeeff, 1.2); dir.position.set(30,80,-50); dir.castShadow=true; K.scene.add(dir);
+  // プール
+  const pX=FW/2-25, pZ=0, pW=30, pD=60, wT=1.0;
+  createBox(pX,1.0,pZ,pW,2.0,pD,CFG.colors.pool); createBox(pX,3.0,pZ-pD/2,pW,2.0,wT,CFG.colors.pool); createBox(pX,3.0,pZ+pD/2,pW,2.0,wT,CFG.colors.pool); createBox(pX-pW/2,3.0,pZ,wT,2.0,pD,CFG.colors.pool); createBox(pX+pW/2,3.0,pZ,wT,2.0,pD,CFG.colors.pool);
+  const wtMat=new THREE.MeshBasicMaterial({color:0x00aaff, transparent:true, opacity:0.6, side:THREE.DoubleSide}), wt=new THREE.Mesh(new THREE.PlaneGeometry(pW-wT*2,pD-wT*2), wtMat);
+  wt.rotation.x=-Math.PI/2; wt.position.set(pX,3.0,pZ); scene.add(wt);
 
-/* Floor */
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(150,150), new THREE.MeshStandardMaterial({color:0x6d5047, roughness:0.9}));
-floor.rotation.x = -Math.PI/2; floor.receiveShadow=true; K.scene.add(floor);
+  const psW=4, psL=20, psX=pX-pW/2-psW/2, psZ=pZ, psH=3.0, psAng=Math.atan2(psH, psL);
+  const psThickness=0.4, psB=new CANNON.Body({mass:0,material:mat});
+  psB.addShape(new CANNON.Box(new CANNON.Vec3(psW/2, psThickness/2, Math.sqrt(psL*psL+psH*psH)/2)));
+  psB.position.set(psX, psH/2-psThickness/2, psZ); psB.quaternion.setFromEuler(-psAng,0,0); world.addBody(psB);
+  const psM=new THREE.Mesh(new THREE.BoxGeometry(psW,psThickness,Math.sqrt(psL*psL+psH*psH)), new THREE.MeshStandardMaterial({color:0xcccccc}));
+  psM.position.copy(psB.position); psM.quaternion.copy(psB.quaternion); psM.receiveShadow=true; scene.add(psM);
 
-/* HUD references */
-const elWave = document.getElementById('waveVal');
-const elWaveName = document.getElementById('waveName');
-const elKill = document.getElementById('killCount');
-const elNext = document.getElementById('nextWave');
-const elKCount = document.getElementById('kCount');
-const elStatus = document.getElementById('statusText');
-document.getElementById('kLimit').textContent = '6';
+  const pfH=1.5, pOutW=pW+2, pOutD=pD+2; const cf=(x,z,w,d)=>{const f=new THREE.Mesh(new THREE.BoxGeometry(w,pfH,d),new THREE.MeshStandardMaterial({color:0xdddddd,transparent:true,opacity:0.3}));f.position.set(x,2.0+pfH/2,z);scene.add(f);const b=new CANNON.Body({mass:0});b.addShape(new CANNON.Box(new CANNON.Vec3(w/2,pfH/2,d/2)));b.position.copy(f.position);world.addBody(b);};
+  cf(pX+pOutW/2, pZ, 0.2, pOutD); cf(pX, pZ-pOutD/2, pOutW, 0.2); cf(pX, pZ+pOutD/2, pOutW, 0.2);
+  const gap=14; cf(pX-pOutW/2, pZ-(pD/2+gap)/2, 0.2, pD/2-gap); cf(pX-pOutW/2, pZ+(pD/2+gap)/2, 0.2, pD/2-gap);
 
-/* Basic config/state */
-K.isXRSessionActive = false;
-K.controllers = [];
-K.kekkaiList = [];
-K.enemies = [];
-K.wave = 1;
-K.killCount = 0;
-K.killsToNextWave = 3;
-K.MAX_ENEMIES = 6;
-K.RESPAWN_SECONDS = 8;
-
-/* Physics (CANNON or fallback) */
-if(CANNON){
-  K.world = new CANNON.World();
-  K.world.gravity.set(0,-15,0);
-  K.matDefault = new CANNON.Material('default');
-  K.matKekkai = new CANNON.Material('kekkai');
-  // contact materials...
-} else {
-  K.world = null; K._fallbackPhysics = { actors: [] };
+  const gZ=FD/2; createBox(-15,5,gZ,5,10,5,0x888888); createBox(15,5,gZ,5,10,5,0x888888); createBox(0,4,gZ,25,8,1,0x555555);
 }
 
-/* Player body */
-if(K.world && CANNON){
-  K.playerBody = new CANNON.Body({ mass: 80, shape: new CANNON.Sphere(0.45), material: K.matDefault, fixedRotation:true });
-  K.playerBody.position.set(0,1.8,0);
-  K.world.addBody(K.playerBody);
-} else {
-  K.playerBody = { position:{x:0,y:1.8,z:0}, velocity:{x:0,y:0,z:0}, radius:0.45 };
+function setupInputs(){
+  els.stick.addEventListener('touchstart',e=>{e.preventDefault();if(stickId!==null)return;const t=e.changedTouches[0];stickId=t.identifier;const r=els.stick.getBoundingClientRect();stickStart={x:r.left+r.width/2,y:r.top+r.height/2};tapTime=Date.now();tapPos={x:t.clientX,y:t.clientY};moveStick(t.clientX,t.clientY);},{passive:false});
+  els.stick.addEventListener('touchmove',e=>{e.preventDefault();for(let i=0;i<e.changedTouches.length;i++)if(e.changedTouches[i].identifier===stickId)moveStick(e.changedTouches[i].clientX,e.changedTouches[i].clientY);},{passive:false});
+  const endStick=e=>{for(let i=0;i<e.changedTouches.length;i++){const t=e.changedTouches[i];if(t.identifier===stickId){if(Date.now()-tapTime<200&&Math.hypot(t.clientX-tapPos.x,t.clientY-tapPos.y)<15){if(playerBody&&Math.abs(playerBody.velocity.y)<1)playerBody.velocity.y=CFG.player.jump;}stickId=null;input.x=0;input.y=0;els.knob.style.transform='translate(-50%,-50%)';}}};
+  els.stick.addEventListener('touchend',endStick);els.stick.addEventListener('touchcancel',endStick);
+  function moveStick(cx,cy){let dx=cx-stickStart.x,dy=cy-stickStart.y;const d=Math.hypot(dx,dy),max=(els.stick.offsetWidth/2)*0.8;if(d>max){dx*=max/d;dy*=max/d;}input.x=dx/max;input.y=dy/max;els.knob.style.transform=`translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;}
+  renderer.domElement.addEventListener('touchstart',e=>{e.preventDefault();for(let i=0;i<e.changedTouches.length;i++){if(lookId===null&&e.changedTouches[i].target===renderer.domElement){lookId=e.changedTouches[i].identifier;lastLook={x:e.changedTouches[i].clientX,y:e.changedTouches[i].clientY};}}},{passive:false});
+  renderer.domElement.addEventListener('touchmove',e=>{e.preventDefault();if(lookId===null)return;for(let i=0;i<e.changedTouches.length;i++){if(e.changedTouches[i].identifier===lookId){const t=e.changedTouches[i];camAngle.yaw-=(t.clientX-lastLook.x)*0.004;camAngle.pitch-=(t.clientY-lastLook.y)*0.004;camAngle.pitch=Math.max(-1.5,Math.min(1.5,camAngle.pitch));lastLook={x:t.clientX,y:t.clientY};}}},{passive:false});
+  const endLook=e=>{for(let i=0;i<e.changedTouches.length;i++)if(e.changedTouches[i].identifier===lookId)lookId=null;};
+  renderer.domElement.addEventListener('touchend',endLook);
+  els.btnJump.addEventListener('touchstart',e=>{e.preventDefault();if(playerBody&&Math.abs(playerBody.velocity.y)<1)playerBody.velocity.y=CFG.player.jump;});
+  els.btnDist.addEventListener('touchstart',e=>{e.preventDefault();currentDist=(currentDist===CFG.dist.near)?CFG.dist.far:CFG.dist.near;els.distLabel.textContent=(currentDist===CFG.dist.near)?"近":"遠";showMsg(`射程: ${els.distLabel.textContent}`,"#fff");});
+  els.btnAct.addEventListener('touchstart',e=>{e.preventDefault();if(actId!==null)return;const t=e.changedTouches[0];actId=t.identifier;actStartPos={x:t.clientX,y:t.clientY};});
+  els.btnAct.addEventListener('touchend',e=>{e.preventDefault();for(let i=0;i<e.changedTouches.length;i++){if(e.changedTouches[i].identifier===actId){const t=e.changedTouches[i];if(Math.hypot(t.clientX-actStartPos.x,t.clientY-actStartPos.y)>20)actionKai();else actionMetsu();actId=null;}}});
+  els.btnDraw.addEventListener('touchstart',e=>{e.preventDefault();if(drawId!==null)return;if(kekkaiList.length>=CFG.kekkai.max){showMsg("上限到達","#f44");return;}const t=e.changedTouches[0];drawId=t.identifier;drawState.active=true;drawState.startX=t.clientX;drawState.startY=t.clientY;els.btnDraw.classList.add('drawing');const gg=new THREE.BoxGeometry(1,1,1),gm=new THREE.MeshBasicMaterial({color:CFG.colors.ghost,wireframe:true});drawState.ghost=new THREE.Mesh(gg,gm);drawState.ghost.position.copy(aimMarker.position);drawState.ghost.rotation.y=camAngle.yaw;scene.add(drawState.ghost);});
+  els.btnDraw.addEventListener('touchmove',e=>{e.preventDefault();if(drawId===null||!drawState.ghost)return;for(let i=0;i<e.changedTouches.length;i++){if(e.changedTouches[i].identifier===drawId){const t=e.changedTouches[i];const dx=Math.abs(t.clientX-drawState.startX)*0.06,dy=(drawState.startY-t.clientY)*0.06;const sxz=1.0+Math.max(0,dx),sy=1.0+Math.max(0,dy);drawState.ghost.scale.set(sxz,sy,sxz);drawState.ghost.position.y=aimMarker.position.y+(sy/2-0.5);}}});
+  els.btnDraw.addEventListener('touchend',e=>{e.preventDefault();for(let i=0;i<e.changedTouches.length;i++){if(e.changedTouches[i].identifier===drawId){if(drawState.ghost){createKekkai(drawState.ghost.position,drawState.ghost.scale,drawState.ghost.rotation.y);scene.remove(drawState.ghost);drawState.ghost=null;}drawId=null;drawState.active=false;els.btnDraw.classList.remove('drawing');}}});
 }
 
-/* Utils */
-function pulseHUD(text, col='#fff'){ elStatus.textContent = text; elStatus.style.color = col; setTimeout(()=>{ elStatus.style.color='#f0a'; }, 1500); }
-function updateCounts(){ elKCount.textContent = K.kekkaiList.length; elKill.textContent = K.killCount; elNext.textContent = K.killsToNextWave; elWave.textContent = K.wave; elWaveName.textContent = ( {1:'静寂',2:'這い寄る影',3:'跳梁',4:'低空',5:'百鬼夜行'}[K.wave] || '百鬼夜行'); }
+function updateAimMarker(){const e=new THREE.Euler(camAngle.pitch,camAngle.yaw,0,'YXZ'),d=new THREE.Vector3(0,0,-1).applyEuler(e),p=playerGroup.position.clone().add(d.multiplyScalar(currentDist));p.y=Math.max(0.5,p.y);aimMarker.position.copy(p);}
+function createKekkai(p,s,r){const b=new CANNON.Body({mass:0,material:new CANNON.Material('kek')});b.position.copy(p);b.quaternion.setFromAxisAngle(new CANNON.Vec3(0,1,0),r);const t=0.5,x=s.x/2,y=s.y/2,z=s.z/2,aw=(d,o)=>b.addShape(new CANNON.Box(d),o);aw(new CANNON.Vec3(t,y,z),new CANNON.Vec3(-x,0,0));aw(new CANNON.Vec3(t,y,z),new CANNON.Vec3(x,0,0));aw(new CANNON.Vec3(x,t,z),new CANNON.Vec3(0,-y,0));aw(new CANNON.Vec3(x,t,z),new CANNON.Vec3(0,y,0));aw(new CANNON.Vec3(x,y,t),new CANNON.Vec3(0,0,-z));aw(new CANNON.Vec3(x,y,t),new CANNON.Vec3(0,0,z));world.addBody(b);const g=new THREE.BoxGeometry(s.x,s.y,s.z),m=new THREE.MeshPhongMaterial({color:CFG.colors.kekkai,transparent:true,opacity:0.3,side:THREE.DoubleSide}),mesh=new THREE.Mesh(g,m);mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(g),new THREE.LineBasicMaterial({color:0xffffff})));mesh.position.copy(p);mesh.rotation.y=r;scene.add(mesh);kekkaiList.push({body:b,mesh:mesh,shrinking:false});spawnText("結",p,"#0ff");updateHUD();}
+function removeKekkai(k){scene.remove(k.mesh);world.removeBody(k.body);kekkaiList=kekkaiList.filter(o=>o!==k);updateHUD();}
+function actionMetsu(){let t=null,minD=999;kekkaiList.forEach(k=>{const d=playerBody.position.distanceTo(k.body.position);if(d<minD){minD=d;t=k;}});if(!t||t.shrinking){showMsg("対象なし","#888");return;}showMsg("滅！","#f24");spawnText("滅",t.mesh.position,"#f24");t.shrinking=true;t.mesh.material.color.setHex(0xff0044);const bbox=new THREE.Box3().setFromObject(t.mesh);let sc=1.0;const loop=()=>{if(!kekkaiList.includes(t))return;sc-=0.05;t.mesh.scale.setScalar(sc);enemies.forEach(e=>{if(bbox.containsPoint(e.mesh.position)){const d=t.body.position.vsub(e.body.position);e.body.velocity.set(d.x*8,d.y*8,d.z*8);if(sc<0.4)killEnemy(e);}});if(sc<=0.1){removeKekkai(t);spawnParticle(t.mesh.position,30,0xffaa00);}else requestAnimationFrame(loop);};loop();}
+function actionKai(){const t=kekkaiList[kekkaiList.length-1];if(t){showMsg("解","#4f8");spawnText("解",t.mesh.position,"#4f8");removeKekkai(t);}else showMsg("結界なし","#888");}
+function spawnEnemy(){if(enemies.length>=6+gameState.wave)return;const r=Math.random();let x,y,z;if(r<0.6){const rx=CFG.field.width/2-10,rz=CFG.field.depth/2-10;x=(Math.random()-.5)*2*rx;z=(Math.random()-.5)*2*rz;y=20;}else if(r<0.8){const fw=CFG.field.width;x=(Math.random()-.5)*(fw-5);z=(-CFG.field.depth/2-20)+(Math.random()-.5)*30;y=35;}else{const px=CFG.field.width/2-25,pz=0;x=px+(Math.random()-.5)*20;z=pz+(Math.random()-.5)*50;y=10;}const sz=0.6+Math.random()*0.8,cl=new THREE.Color().setHSL(Math.random(),0.8,0.5),ms=15*sz,b=new CANNON.Body({mass:ms,shape:new CANNON.Sphere(sz),material:new CANNON.Material('ene'),linearDamping:0.4});b.position.set(x,y,z);world.addBody(b);let g;const rr=Math.random();if(rr<0.3)g=new THREE.IcosahedronGeometry(sz,0);else if(rr<0.6)g=new THREE.OctahedronGeometry(sz,0);else g=new THREE.SphereGeometry(sz,16,16);const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:cl,roughness:0.3}));scene.add(m);enemies.push({body:b,mesh:m});updateHUD();}
+function killEnemy(e){if(!enemies.includes(e))return;enemies=enemies.filter(o=>o!==e);scene.remove(e.mesh);world.removeBody(e.body);spawnParticle(e.mesh.position,25,e.mesh.material.color.getHex());gameState.kills++;gameState.req--;if(gameState.req<=0){gameState.wave++;gameState.req=gameState.wave*2+4;showMsg(`WAVE ${gameState.wave}`,"#fe0");}updateHUD();}
+function updateHUD(){els.wVal.textContent=gameState.wave;els.kVal.textContent=gameState.kills;els.tVal.textContent=gameState.req;els.kekVal.textContent=kekkaiList.length;}
+function showMsg(t,c){els.msg.textContent=t;els.msg.style.color=c;els.msg.style.opacity=1;setTimeout(()=>els.msg.style.opacity=0,800);}
+function spawnText(s,p,c){const cvs=document.createElement('canvas');cvs.width=64;cvs.height=64;const ctx=cvs.getContext('2d');ctx.font="bold 48px sans-serif";ctx.fillStyle=c;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(s,32,32);const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cvs),transparent:true}));sp.position.copy(p);sp.scale.set(3,3,3);scene.add(sp);let f=0;const a=()=>{f+=0.03;sp.position.y+=0.05;sp.material.opacity=1-f;if(f<1)requestAnimationFrame(a);else{scene.remove(sp);sp.material.map.dispose();}};a();}
+function spawnParticle(p,n,c){const g=new THREE.BoxGeometry(0.25,0.25,0.25),m=new THREE.MeshBasicMaterial({color:c});for(let i=0;i<n;i++){const me=new THREE.Mesh(g,m);me.position.copy(p).add(new THREE.Vector3((Math.random()-.5)*2,(Math.random()-.5)*2,(Math.random()-.5)*2));scene.add(me);const v=new THREE.Vector3(Math.random()-.5,Math.random()-.5,Math.random()-.5).multiplyScalar(1.5);const a=()=>{me.position.add(v);me.scale.multiplyScalar(0.92);if(me.scale.x>0.05)requestAnimationFrame(a);else scene.remove(me);};a();}}
 
-/* Controllers setup */
-const controllerModelFactory = new XRControllerModelFactory();
-function buildController(i){
-  const controller = K.renderer.xr.getController(i);
-  controller.userData.index = i;
-  controller.addEventListener('connected', (ev)=>{ controller.userData.inputSource = ev.data; });
-  controller.addEventListener('disconnected', ()=>{ controller.userData.inputSource = null; });
-  const grip = K.renderer.xr.getControllerGrip(i);
-  grip.add(controllerModelFactory.createControllerModel(grip));
-  K.scene.add(controller); K.scene.add(grip);
-  const state = { index:i, controller, grip, prevPos: new THREE.Vector3(), vel: new THREE.Vector3(), drawing:false, lastTrigger:false, thumb:{x:0,y:0} };
-  K.controllers[i] = state;
-  return state;
-}
-buildController(0); buildController(1);
-
-/* Movement & joystick mapping (K.xrMove vector) */
-K.xrMove = new THREE.Vector3();
-
-/* Arm-swing walk helper */
-K.walk = { accL:{history:[]}, accR:{history:[]}, periodL:0.6, periodR:0.6, smoothSpeed:0 };
-
-/* Kekkai ghost material */
-const GHOST_MAT = new THREE.MeshStandardMaterial({ color:0x00ccff, transparent:true, opacity:0.28, side:THREE.DoubleSide, depthWrite:false });
-const GHOST_EDGE = new THREE.LineBasicMaterial({ color:0x88ffff });
-
-/* Create ghost, finalize -> actual kekkai */
-function makeGhostAt(pos){
-  const geo = new THREE.BoxGeometry(1,1,1);
-  const mesh = new THREE.Mesh(geo, GHOST_MAT.clone());
-  mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), GHOST_EDGE.clone()));
-  mesh.position.copy(pos); mesh.scale.set(1,1,1);
-  K.scene.add(mesh);
-  return mesh;
-}
-function finalizeGhost(mesh){
-  const size = new THREE.Vector3(); mesh.getWorldScale(size);
-  // clamp
-  size.x = Math.max(0.5, Math.min(12, size.x));
-  size.y = Math.max(0.5, Math.min(12, size.y));
-  size.z = Math.max(0.5, Math.min(12, size.z));
-  // position
-  const pos = new THREE.Vector3(); mesh.getWorldPosition(pos);
-  // final mesh
-  const mat = new THREE.MeshPhongMaterial({ color:0x0088ff, transparent:true, opacity:0.32, emissive:0x003355, side:THREE.DoubleSide });
-  const final = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), mat);
-  final.add(new THREE.LineSegments(new THREE.EdgesGeometry(final.geometry), new THREE.LineBasicMaterial({color:0x66eeff})));
-  final.position.copy(pos);
-  K.scene.add(final);
-  // physics body if possible
-  let body = null;
-  if(CANNON && K.world){
-    try{
-      body = new CANNON.Body({ mass:0, material:K.matKekkai });
-      const hx = size.x/2, hy = size.y/2, hz = size.z/2, th = 0.25;
-      body.addShape(new CANNON.Box(new CANNON.Vec3(th, hy, hz)), new CANNON.Vec3(hx, 0, 0));
-      body.addShape(new CANNON.Box(new CANNON.Vec3(th, hy, hz)), new CANNON.Vec3(-hx,0,0));
-      body.addShape(new CANNON.Box(new CANNON.Vec3(hx, th, hz)), new CANNON.Vec3(0, hy,0));
-      body.addShape(new CANNON.Box(new CANNON.Vec3(hx, th, hz)), new CANNON.Vec3(0, -hy,0));
-      body.addShape(new CANNON.Box(new CANNON.Vec3(hx, hy, th)), new CANNON.Vec3(0,0,hz));
-      body.addShape(new CANNON.Box(new CANNON.Vec3(hx, hy, th)), new CANNON.Vec3(0,0,-hz));
-      body.position.set(pos.x, pos.y, pos.z);
-      K.world.addBody(body);
-    }catch(e){ console.warn('cannon create failed', e); body = null; }
-  }
-  const kek = { mesh:final, body, created:performance.now(), life:35000, isShrinking:false, initialSize:size.clone() };
-  K.kekkaiList.push(kek);
-  updateCounts();
-  setTimeout(()=>{ if(K.kekkaiList.includes(kek) && !kek.isShrinking) removeKekkai(kek); }, kek.life);
-  return kek;
-}
-function removeKekkai(k){ try{ K.scene.remove(k.mesh); }catch(e){} if(k.body && K.world) try{ K.world.removeBody(k.body); }catch(e){} K.kekkaiList = K.kekkaiList.filter(x=>x!==k); updateCounts(); }
-
-/* Controller-driven drawing flow: per-controller ghost */
-const perGhost = new Map();
-function onControllerTriggerDown(state){
-  // start ghost at front of controller
-  const pos = new THREE.Vector3(); state.controller.getWorldPosition(pos);
-  const forward = new THREE.Vector3(0,0,-1).applyQuaternion(state.controller.quaternion);
-  const start = pos.clone().add(forward.multiplyScalar(0.3));
-  if(K.kekkaiList.length >= 6){ pulseHUD('結界数が上限です','#f44'); return; }
-  const ghost = makeGhostAt(start);
-  perGhost.set(state.index, { ghost, started:performance.now() });
-  pulseHUD('結界作成開始','#0ff');
-}
-function onControllerTriggerHold(state){ // update ghost scale using controller velocity local
-  const gentry = perGhost.get(state.index);
-  if(!gentry) return;
-  const ghost = gentry.ghost;
-  // compute local vel
-  const pos = new THREE.Vector3(); state.controller.getWorldPosition(pos);
-  const vel = pos.clone().sub(state.prevPos).divideScalar(Math.max((performance.now()-state.lastVelTime||1)/1000, 1e-6));
-  // store last
-  state.prevPos.copy(pos); state.lastVelTime = performance.now();
-  // transform vel to controller local
-  const inv = new THREE.Matrix4().copy(state.controller.matrixWorld).invert();
-  const localVel = vel.clone().applyMatrix4(inv);
-  // map absolute localVel to scale multipliers
-  const sx = THREE.MathUtils.clamp(1 + Math.abs(localVel.x) * 0.12, 0.5, 12);
-  const sy = THREE.MathUtils.clamp(1 + Math.abs(localVel.y) * 0.12, 0.5, 12);
-  const sz = THREE.MathUtils.clamp(1 + Math.abs(localVel.z) * 0.12, 0.5, 12);
-  // lerp
-  ghost.scale.x += (sx - ghost.scale.x) * 0.3;
-  ghost.scale.y += (sy - ghost.scale.y) * 0.3;
-  ghost.scale.z += (sz - ghost.scale.z) * 0.3;
-  // follow front of controller
-  const front = pos.clone().add(new THREE.Vector3(0,0,-1).applyQuaternion(state.controller.quaternion).multiplyScalar(0.4));
-  ghost.position.lerp(front, 0.25);
-}
-function onControllerTriggerUp(state){
-  const gentry = perGhost.get(state.index);
-  if(!gentry) return;
-  const ghost = gentry.ghost;
-  // finalize with easing
-  const startScale = ghost.scale.clone();
-  const finalScale = new THREE.Vector3(
-    THREE.MathUtils.clamp(startScale.x, 0.5, 12),
-    THREE.MathUtils.clamp(startScale.y, 0.5, 12),
-    THREE.MathUtils.clamp(startScale.z, 0.5, 12)
-  );
-  const startTime = performance.now();
-  const dur = 350;
-  (function anim(){
-    const t = Math.min(1, (performance.now()-startTime)/dur);
-    const ease = 1 - Math.pow(1 - t, 3);
-    ghost.scale.lerpVectors(startScale, finalScale, ease);
-    ghost.material.opacity = 0.28 + 0.7 * ease;
-    if(t < 1) requestAnimationFrame(anim);
-    else {
-      // finalize kekkai
-      const kek = finalizeGhost(ghost);
-      try{ K.scene.remove(ghost); }catch(e){}
-      perGhost.delete(state.index);
-      pulseHUD('結界設置','#0f8');
-    }
-  })();
-}
-
-/* Controller update: poll gamepad axes/buttons robustly */
-function updateControllers(dt){
-  const session = K.renderer.xr.getSession ? K.renderer.xr.getSession() : null;
-  for(const st of K.controllers){
-    if(!st || !st.controller) continue;
-    // world pos vel
-    const pos = new THREE.Vector3(); st.controller.getWorldPosition(pos);
-    st.vel.copy(pos).sub(st.prevPos).divideScalar(Math.max(dt, 1e-6));
-    st.prevPos.copy(pos);
-
-    // find input source mapping
-    let input = st.controller.userData.inputSource || (session && session.inputSources && session.inputSources[st.index]) || null;
-    if(input && input.gamepad){
-      const gp = input.gamepad;
-      // axes mapping varies: try axes[2,3] (oculus) else [0,1]
-      const axX = gp.axes.length >= 4 ? gp.axes[2] : (gp.axes[0] || 0);
-      const axY = gp.axes.length >= 4 ? gp.axes[3] : (gp.axes[1] || 0);
-      // deadzone
-      const dz = 0.18;
-      st.thumb.x = Math.abs(axX) > dz ? axX : 0;
-      st.thumb.y = Math.abs(axY) > dz ? axY : 0;
-
-      // trigger button index 0 typical
-      const trig = !!(gp.buttons[0] && gp.buttons[0].pressed);
-      if(trig && !st.lastTrigger){
-        // down
-        onControllerTriggerDown(st);
-      } else if(trig && st.lastTrigger){
-        // hold
-        onControllerTriggerHold(st);
-      } else if(!trig && st.lastTrigger){
-        // up
-        onControllerTriggerUp(st);
-      }
-      st.lastTrigger = trig;
-    }
-  }
-}
-
-/* XR movement mapping: left controller thumb controls movement; maintain orientation (crab walk) */
-function updateXRMovement(){
-  const left = K.controllers[0];
-  if(!left) return;
-  const input = left.controller.userData.inputSource;
-  if(!input || !input.gamepad) return;
-  const gp = input.gamepad;
-  const axX = gp.axes.length >= 4 ? gp.axes[2] : (gp.axes[0] || 0);
-  const axY = gp.axes.length >= 4 ? gp.axes[3] : (gp.axes[1] || 0);
-  const dz = 0.18;
-  const lx = Math.abs(axX) > dz ? axX : 0;
-  const ly = Math.abs(axY) > dz ? axY : 0;
-  if(lx !== 0 || ly !== 0){
-    const dir = new THREE.Vector3(); K.camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
-    const theta = Math.atan2(dir.x, dir.z);
-    // forward/back uses -ly (thumb up negative)
-    const vx = (-ly) * Math.sin(theta) + (lx) * Math.sin(theta + Math.PI/2);
-    const vz = (-ly) * Math.cos(theta) + (lx) * Math.cos(theta + Math.PI/2);
-    K.xrMove.set(vx, 0, vz);
-  } else K.xrMove.set(0,0,0);
-}
-
-/* Enemies & Wave */
-function spawnEnemy(){
-  if(K.enemies.length >= K.MAX_ENEMIES) return;
-  const typePool = ['walker','jumper','low_flyer','high_flyer'];
-  const type = (K.wave < 2) ? 'static' : typePool[Math.floor(Math.random()*typePool.length)];
-  const size = 0.5 + Math.random()*0.6;
-  const hue = Math.random();
-  const color = new THREE.Color().setHSL(hue, 0.8, 0.6);
-  const geo = Math.random() < 0.5 ? new THREE.SphereGeometry(size,12,12) : new THREE.BoxGeometry(size*1.2,size*1.2,size*1.2);
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity:0.5 }));
-  const angle = Math.random()*Math.PI*2; const dist = 12 + Math.random()*18;
-  const spawnY = (type==='high_flyer' || type==='low_flyer') ? (3 + Math.random()*6) : (0.8 + Math.random()*1.8);
-  mesh.position.set(Math.sin(angle)*dist, spawnY, Math.cos(angle)*dist);
-  K.scene.add(mesh);
-  const enemy = { mesh, size, type, trapped:false, nextMove: performance.now() + Math.random()*1500 };
-  K.enemies.push(enemy);
-  updateCounts();
-}
-function destroyEnemy(en){
-  try{ K.scene.remove(en.mesh); }catch(e){}
-  K.enemies = K.enemies.filter(x=>x!==en);
-  K.killCount++; K.killsToNextWave--; if(K.killsToNextWave <= 0){ K.wave++; K.killsToNextWave = (K.wave<5)?4:8; pulseHUD('WAVE UP!','#fe0'); }
-  updateCounts();
-}
-
-/* Enemy behavior - simplified (non-physics fallback) */
-function updateEnemies(dt){
-  if(K.enemies.length < K.MAX_ENEMIES && performance.now() - (K._lastSpawn||0) > K.RESPAWN_SECONDS*1000){ spawnEnemy(); K._lastSpawn = performance.now(); }
-  const ppos = K.playerBody.position;
-  for(const en of K.enemies.slice()){
-    // simple move toward player
-    const dir = new THREE.Vector3(ppos.x - en.mesh.position.x, 0, ppos.z - en.mesh.position.z).normalize();
-    en.mesh.position.add(dir.multiplyScalar( (en.type==='walker'? dt*1.2 : dt*0.8) ));
-    if(en.mesh.position.distanceTo(new THREE.Vector3(ppos.x, en.mesh.position.y, ppos.z)) < (en.size + 0.8)){
-      // collide with player -> respawn/destroy
-      destroyEnemy(en);
-    }
-    // check inside shrinking kekkai
-    for(const k of K.kekkaiList){
-      const box = new THREE.Box3().setFromObject(k.mesh);
-      if(box.containsPoint(en.mesh.position)){
-        en.trapped = true;
-        // if kekkai is shrinking, kill
-        if(k.isShrinking) destroyEnemy(en);
+let lastT=0, vrState={lastDraw:false,lastAct:false,lastDist:false};
+function loop(t){
+  const dt=Math.min((t-lastT)/1000,0.1); lastT=t;
+  world.step(1/60, dt, 3);
+  if(renderer.xr.isPresenting){
+    const s=renderer.xr.getSession();
+    if(s){
+      for(const src of s.inputSources){
+        if(!src.gamepad)continue;const gp=src.gamepad;
+        if(src.handedness==='left'&&gp.axes.length>=4){input.x=gp.axes[2];input.y=gp.axes[3];}
+        if(src.handedness==='right'&&gp.axes.length>=4){
+          if(Math.abs(gp.axes[2])>0.5)camAngle.yaw-=gp.axes[2]*0.04;
+          if(gp.buttons[4]?.pressed&&Math.abs(playerBody.velocity.y)<1)playerBody.velocity.y=CFG.player.jump;
+          if(gp.buttons[0]?.pressed){if(!drawState.active&&kekkaiList.length<CFG.kekkai.max){drawState.active=true;const gg=new THREE.BoxGeometry(1,1,1),gm=new THREE.MeshBasicMaterial({color:CFG.colors.ghost,wireframe:true});drawState.ghost=new THREE.Mesh(gg,gm);scene.add(drawState.ghost);}if(drawState.ghost){drawState.ghost.position.copy(aimMarker.position);drawState.ghost.rotation.y=camAngle.yaw;drawState.ghost.scale.set(3,3,3);drawState.ghost.position.y=aimMarker.position.y+1;}}else{if(drawState.active&&drawState.ghost){createKekkai(drawState.ghost.position,drawState.ghost.scale,drawState.ghost.rotation.y);scene.remove(drawState.ghost);drawState.ghost=null;drawState.active=false;}}
+          const act=gp.buttons[5]?.pressed;if(act&&!vrState.lastAct)actionMetsu();vrState.lastAct=act;
+          const dst=gp.buttons[1]?.pressed;if(dst&&!vrState.lastDist){currentDist=(currentDist===CFG.dist.near)?CFG.dist.far:CFG.dist.near;showMsg(currentDist===CFG.dist.near?"近":"遠","#fff");}vrState.lastDist=dst;
+        }
       }
     }
+    const cam=renderer.xr.getCamera(),d=new THREE.Vector3();cam.getWorldDirection(d);d.y=0;d.normalize();
+    const r=new THREE.Vector3().crossVectors(d,new THREE.Vector3(0,1,0)),m=d.multiplyScalar(-input.y).add(r.multiplyScalar(input.x)).multiplyScalar(CFG.player.speed);
+    playerBody.velocity.x=m.x;playerBody.velocity.z=m.z;playerGroup.position.copy(playerBody.position);
+  }else{
+    const yaw=camAngle.yaw,fwd=new THREE.Vector3(input.x,0,input.y).applyAxisAngle(new THREE.Vector3(0,1,0),yaw);
+    playerBody.velocity.x=fwd.x*CFG.player.speed;playerBody.velocity.z=fwd.z*CFG.player.speed;
+    playerGroup.position.copy(playerBody.position).add(new THREE.Vector3(0,CFG.player.height,0));
+    playerGroup.rotation.y=yaw;camera.rotation.x=camAngle.pitch;
   }
+  updateAimMarker();
+  if(t>gameState.nextSpawn){spawnEnemy();gameState.nextSpawn=t+3000-gameState.wave*100;}
+  enemies.forEach(e=>{e.mesh.position.copy(e.body.position);e.mesh.quaternion.copy(e.body.quaternion);if(e.body.position.y<-10)killEnemy(e);const d=playerBody.position.vsub(e.body.position);d.normalize();e.body.applyForce(d.scale(20),e.body.position);});
+  renderer.render(scene,camera);
 }
-
-/* Mets action - shrink nearest kekkai */
-function metsAction(){
-  const target = pickClosestKekkai(30);
-  if(!target){ pulseHUD('対象なし','#888'); return; }
-  if(target.isShrinking) return;
-  target.isShrinking = true; pulseHUD('滅！','#f24');
-  let scale = 1.0;
-  (function shrink(){
-    if(!K.kekkaiList.includes(target)) return;
-    scale -= 0.03;
-    target.mesh.scale.setScalar(scale);
-    // get enemies inside
-    const box = new THREE.Box3().setFromObject(target.mesh);
-    for(const e of K.enemies.slice()){
-      if(box.containsPoint(e.mesh.position)){
-        if(scale < e.size * 0.6) destroyEnemy(e);
-      }
-    }
-    if(scale <= 0.04){ removeKekkai(target); return; }
-    requestAnimationFrame(shrink);
-  })();
-}
-
-/* pick closest kekkai */
-function pickClosestKekkai(range){
-  let best=null; let bestD2 = range*range;
-  const px = K.playerBody.position.x, py = K.playerBody.position.y, pz = K.playerBody.position.z;
-  for(const k of K.kekkaiList){
-    const dx = px - k.mesh.position.x, dy = py - k.mesh.position.y, dz = pz - k.mesh.position.z;
-    const d2 = dx*dx + dy*dy + dz*dz;
-    if(d2 < bestD2){ bestD2 = d2; best = k; }
-  }
-  return best;
-}
-
-/* spawn Kanji quick sprite */
-function spawnKanji(text, pos, color='#4af'){
-  const cvs = document.createElement('canvas'); cvs.width=128; cvs.height=128;
-  const ctx = cvs.getContext('2d'); ctx.font='bold 96px serif'; ctx.fillStyle=color; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(text,64,64);
-  const tex = new THREE.CanvasTexture(cvs);
-  const mat = new THREE.SpriteMaterial({ map:tex, transparent:true, depthTest:false });
-  const sp = new THREE.Sprite(mat); sp.position.copy(pos); sp.scale.setScalar(0.6); K.scene.add(sp);
-  setTimeout(()=>{ try{ K.scene.remove(sp); }catch(e){} }, 900);
-}
-
-/* Frame loop */
-const clock = new THREE.Clock();
-K.renderer.setAnimationLoop((time, frame) => {
-  const dt = Math.min(clock.getDelta(), 0.1);
-  // step physics
-  if(K.world && CANNON) try{ K.world.step(1/60, dt); }catch(e){}
-  // controller & movement
-  try{ updateControllers(dt); updateXRMovement(); }catch(e){ console.warn('ctrl update err', e); }
-  // apply xrMove & walk speed to playerBody
-  const speed = (K.uiSettings && K.uiSettings.moveSpeed) || 6.0;
-  // combine K.xrMove and arm swing: here we only use K.xrMove and small K.walk.smoothSpeed
-  let vx = (K.xrMove.x || 0) * speed + (K.walk.smoothSpeed||0);
-  let vz = (K.xrMove.z || 0) * speed + (K.walk.smoothSpeed||0);
-  if(K.playerBody instanceof CANNON.Body){
-    K.playerBody.velocity.x = vx; K.playerBody.velocity.z = vz;
-    // sync playerGroup
-    K.playerGroup.position.set(K.playerBody.position.x, K.playerBody.position.y, K.playerBody.position.z);
-  } else {
-    K.playerBody.velocity.x = vx; K.playerBody.velocity.z = vz;
-    const dtSec = dt;
-    K.playerBody.position.x += K.playerBody.velocity.x * dtSec;
-    K.playerBody.position.z += K.playerBody.velocity.z * dtSec;
-    // gravity/floor
-    K.playerBody.velocity.y -= 9.8 * dtSec;
-    K.playerBody.position.y += K.playerBody.velocity.y * dtSec;
-    if(K.playerBody.position.y < 0.1) { K.playerBody.position.y = 0.1; K.playerBody.velocity.y = 0; }
-    K.playerGroup.position.set(K.playerBody.position.x, K.playerBody.position.y, K.playerBody.position.z);
-  }
-  // enemies update
-  try{ updateEnemies(dt); }catch(e){ console.warn('enemy update err', e); }
-  // render
-  K.renderer.render(K.scene, K.camera);
-});
-
-/* UI bindings (mobile buttons) */
-document.getElementById('mDraw').addEventListener('click', ()=>{ pulseHUD('モバイル: 結界作成(長押し未実装)','#ff8'); });
-document.getElementById('mMets').addEventListener('click', ()=>{ metsAction(); });
-document.getElementById('mKai').addEventListener('click', ()=>{ const k=pickClosestKekkai(15); if(k){ removeKekkai(k); spawnKanji('解', k.mesh.position, '#8f8'); } else pulseHUD('対象なし','#888'); });
-
-/* VR UI Panel (simplified): canvas texture and raycast click */
-const UIW = 1024, UIH = 512;
-const uiCanvas = document.createElement('canvas'); uiCanvas.width=UIW; uiCanvas.height=UIH;
-const uiCtx = uiCanvas.getContext('2d');
-const uiTex = new THREE.CanvasTexture(uiCanvas);
-const uiMat = new THREE.MeshBasicMaterial({ map: uiTex, side:THREE.DoubleSide });
-const uiMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.6,0.8), uiMat);
-uiMesh.position.set(0,1.9,-1.4); K.scene.add(uiMesh);
-
-K.uiSettings = { moveSpeed:6.0, maxKekkaiSize:6, stickSensitivity:1.0, joystickInvert:false };
-function drawUI(){
-  uiCtx.fillStyle='#021229'; uiCtx.fillRect(0,0,UIW,UIH);
-  uiCtx.fillStyle='#fff'; uiCtx.font='36px sans-serif'; uiCtx.fillText('設定パネル', 24, 48);
-  uiCtx.font='20px sans-serif'; uiCtx.fillText('移動速度: '+K.uiSettings.moveSpeed.toFixed(1), 24, 110);
-  uiCtx.fillText('結界最大: '+K.uiSettings.maxKekkaiSize, 24, 170);
-  uiCtx.fillText('スティック感度: '+K.uiSettings.stickSensitivity.toFixed(2), 24, 230);
-  uiCtx.fillStyle='#0ff'; uiCtx.fillRect(700, 80, 200, 56); uiCtx.fillStyle='#000'; uiCtx.fillText('保存', 760, 122);
-  uiTex.needsUpdate = true;
-}
-drawUI();
-
-/* simple UI interaction: raycast from controllers press */
-const uiRay = new THREE.Raycaster();
-function tryUIPress(ctrlState){
-  const origin = new THREE.Vector3(); const dir = new THREE.Vector3(0,0,-1);
-  ctrlState.controller.getWorldPosition(origin); ctrlState.controller.getWorldDirection(dir);
-  uiRay.set(origin, dir);
-  const inter = uiRay.intersectObject(uiMesh, true);
-  if(inter.length === 0) return false;
-  const uv = inter[0].uv; // vector2
-  const cx = Math.floor(uv.x * UIW), cy = Math.floor((1-uv.y) * UIH);
-  // map to save button rough area: x>700 && y in 80..136
-  if(cx > 700 && cy > 80 && cy < 136){
-    // save
-    localStorage.setItem('kekkai_settings', JSON.stringify(K.uiSettings));
-    pulseHUD('設定保存','#0f8');
-    drawUI();
-    return true;
-  }
-  return true;
-}
-
-/* per-frame controller UI press check (using trigger) */
-K.renderer.setAnimationLoop((t, frame) => {
-  // same loop called earlier; to avoid double render we will not duplicate heavy work here.
-});
-/* Instead detect trigger presses in updateControllers (already called) and we can call tryUIPress there if needed.
-   For simplicity, handle pressing by holding grip+trigger logic omitted to keep code robust in varied devices.
-*/
-
-/* Helper to find nearest kekkai for mobile/keyboard actions */
-updateCounts();
-
-/* VR button click handler (also handled by VRButton) */
-document.getElementById('vrToggle').addEventListener('click', async ()=>{
-  if(!K.isXRSessionActive && navigator.xr){
-    try{
-      const sess = await navigator.xr.requestSession('immersive-vr', { optionalFeatures:['local-floor','bounded-floor','hand-tracking'] });
-      await K.renderer.xr.setSession(sess);
-      K.isXRSessionActive = true; pulseHUD('VRセッション中','#0f8');
-      sess.addEventListener('end', ()=>{ K.isXRSessionActive = false; pulseHUD('VR終了','#f44'); });
-    }catch(e){ console.warn(e); pulseHUD('VR開始失敗','#f44'); }
-  } else {
-    const s = K.renderer.xr.getSession(); if(s) s.end();
-  }
-});
-
-/* Resize */
-window.addEventListener('resize', ()=>{ K.camera.aspect = innerWidth/innerHeight; K.camera.updateProjectionMatrix(); K.renderer.setSize(innerWidth, innerHeight); });
-
-/* Debug: expose K to console */
-window.Kekkai = K;
-console.log('Integrated Kekkai VR loaded. K object available as window.Kekkai');
+document.getElementById('vrBtn').addEventListener('click', ()=>{ if(navigator.xr) navigator.xr.requestSession('immersive-vr').then(s=>{ renderer.xr.setSession(s); document.getElementById('uiLayer').style.display='none'; }); });
+window.onload = init;
 </script>
 </body>
 </html>
