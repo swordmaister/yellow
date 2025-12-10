@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<title>真・結界師VR — Mission & Mobility Fix</title>
+<title>真・結界師VR — Stable Edition</title>
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#87CEEB">
 <style>
@@ -109,8 +109,7 @@ function setupEnvironment(mat){
   const slB=new CANNON.Body({mass:0,material:mat}); slB.addShape(new CANNON.Box(new CANNON.Vec3(slLen/2,0.5,stW/2))); slB.position.set(slMidX, slMidY, slZ); const slQ = new THREE.Quaternion(); slQ.setFromEuler(new THREE.Euler(0,0,slAng)); slB.quaternion.copy(slQ); world.addBody(slB);
   const slM=new THREE.Mesh(new THREE.BoxGeometry(slLen,1,stW), new THREE.MeshStandardMaterial({color:CFG.colors.concrete})); slM.position.copy(slB.position); slM.quaternion.copy(slB.quaternion); scene.add(slM);
   
-  // -- Fixed: Small Bridge Ramp (Extended length to overlap and prevent stuck) --
-  const brLen = 3.5, brRise = 1.0; const brAng = Math.atan2(brRise, 2.0); // Angle based on horiz distance
+  const brLen = 3.5, brRise = 1.0; const brAng = Math.atan2(brRise, 2.0); 
   const brB = new CANNON.Body({mass:0, material:mat}); 
   brB.addShape(new CANNON.Box(new CANNON.Vec3(landW/2, 0.2, brLen/2))); 
   brB.position.set(landX, bH + brRise/2, bZ + 20); 
@@ -129,14 +128,11 @@ function setupEnvironment(mat){
   createBox(pX, pBaseH/2, pZ, pW+4, pBaseH, pD+4, CFG.colors.concrete);
   createBox(pX, pBaseH+1, pZ - pD/2 - 1, pW+2, 2, 2, CFG.colors.concrete); createBox(pX, pBaseH+1, pZ + pD/2 + 1, pW+2, 2, 2, CFG.colors.concrete); createBox(pX - pW/2 - 1, pBaseH+1, pZ, 2, 2, pD, CFG.colors.concrete); createBox(pX + pW/2 + 1, pBaseH+1, pZ, 2, 2, pD, CFG.colors.concrete);
   const water = new THREE.Mesh(new THREE.PlaneGeometry(pW, pD), new THREE.MeshBasicMaterial({color:0x00aaff, transparent:true, opacity:0.6, side:THREE.DoubleSide})); water.rotation.x = -Math.PI/2; water.position.set(pX, pBaseH+1.5, pZ); scene.add(water);
-  // -- Fixed: Pool Ramps on Sides (Left and Right) --
   const prRun=25, prRise=pBaseH, prW=4; const prLen=Math.sqrt(prRun**2+prRise**2), prAng=Math.atan2(prRise, prRun); const prMidY = prRise/2; const prZ = pZ;
-  // Right Side Ramp (X+)
   const prMidX_R = pX + pW/2 + 2 + prRun/2; 
   const prB_R=new CANNON.Body({mass:0,material:mat}); prB_R.addShape(new CANNON.Box(new CANNON.Vec3(prLen/2,0.5,prW/2))); prB_R.position.set(prMidX_R, prMidY, prZ);
   const prQ_R = new THREE.Quaternion(); prQ_R.setFromEuler(new THREE.Euler(0, 0, prAng)); prB_R.quaternion.copy(prQ_R); world.addBody(prB_R);
   const prM_R=new THREE.Mesh(new THREE.BoxGeometry(prLen,1,prW), new THREE.MeshStandardMaterial({color:CFG.colors.concrete})); prM_R.position.copy(prB_R.position); prM_R.quaternion.copy(prB_R.quaternion); scene.add(prM_R);
-  // Left Side Ramp (X-) - "Center of Schoolyard Side"
   const prMidX_L = pX - pW/2 - 2 - prRun/2;
   const prB_L=new CANNON.Body({mass:0,material:mat}); prB_L.addShape(new CANNON.Box(new CANNON.Vec3(prLen/2,0.5,prW/2))); prB_L.position.set(prMidX_L, prMidY, prZ);
   const prQ_L = new THREE.Quaternion(); prQ_L.setFromEuler(new THREE.Euler(0, 0, -prAng)); prB_L.quaternion.copy(prQ_L); world.addBody(prB_L);
@@ -163,6 +159,7 @@ function updateActiveKekkai(k, dx, dy) { const sx = 1.0 + Math.max(0, dx), sy = 
 
 function setupVRControllers() { const modelFactory = new XRControllerModelFactory(); for (let i = 0; i < 2; i++) { const controller = renderer.xr.getController(i); playerGroup.add(controller); controllers.push(controller); const grip = renderer.xr.getControllerGrip(i); grip.add(modelFactory.createControllerModel(grip)); playerGroup.add(grip); controllerGrips.push(grip); } }
 function setupVRHud() { const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 128; vrHudCtx = canvas.getContext('2d'); const tex = new THREE.CanvasTexture(canvas); vrHudMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.25), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.9, depthTest: false })); vrHudMesh.position.set(0, 0.3, -1); vrHudMesh.renderOrder = 9999; camera.add(vrHudMesh); }
+let currentSession = null; document.getElementById('vrBtn').addEventListener('click', async () => { if (currentSession) return; if (!navigator.xr) return; try { const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'] }); renderer.xr.setSession(session); currentSession = session; els.novr.forEach(e => e.style.opacity = 0); session.addEventListener('end', () => { currentSession = null; els.novr.forEach(e => e.style.opacity = 1); }); } catch (e) { console.error("VR Init Error:", e); alert("VRモードの起動に失敗しました: " + e.message); } });
 function handleVRInput() { if (!renderer.xr.isPresenting) return; const session = renderer.xr.getSession(); if (!session) return; for (const src of session.inputSources) { if (!src.gamepad) continue; const gp = src.gamepad; const hand = src.handedness; const idx = (hand === 'left') ? 0 : 1; if(!controllers[idx]) continue; const ctrlPos = controllers[idx].position;
     if (hand === 'left') { if (gp.axes.length >= 4) { input.x = gp.axes[2]; input.y = gp.axes[3]; } if (gp.buttons[3]?.pressed && Math.abs(playerBody.velocity.y) < 1) playerBody.velocity.y = CFG.player.jump; if (gp.buttons[0]?.pressed && !vrState.left.triggerHeld) { actionKai(); vrState.left.triggerHeld = true; } if (!gp.buttons[0]?.pressed) vrState.left.triggerHeld = false; const grip = gp.buttons[1]?.pressed; if (grip) { if (!vrState.left.drawing) { if (kekkaiList.length >= CFG.kekkai.max) { showMsg("上限", "#f44"); } else { vrState.left.drawing = true; vrState.left.startPos.copy(ctrlPos); const g = new THREE.BoxGeometry(1,1,1); const m = new THREE.MeshPhongMaterial({color: CFG.colors.drawPhys, transparent: true, opacity: 0.5, side: THREE.DoubleSide}); vrState.left.mesh = new THREE.Mesh(g, m); vrState.left.mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 }))); vrState.left.mesh.position.copy(ctrlPos); scene.add(vrState.left.mesh); } } else { const diff = ctrlPos.clone().sub(vrState.left.startPos); const sx = 1.0 + Math.abs(diff.x) * CFG.kekkai.sensitivity; const sy = 1.0 + Math.abs(diff.y) * CFG.kekkai.sensitivity; const sz = 1.0 + Math.abs(diff.z) * CFG.kekkai.sensitivity; if (vrState.left.mesh) vrState.left.mesh.scale.set(sx, sy, sz); } } else { if (vrState.left.drawing) { if (vrState.left.mesh) { const s = vrState.left.mesh.scale; const p = vrState.left.mesh.position.clone(); createKekkai(p, s, 0, false); safeRemoveMesh(vrState.left.mesh); vrState.left.mesh = null; } vrState.left.drawing = false; } } }
     if (hand === 'right') { const turnVal = gp.axes[2]; if (Math.abs(turnVal) > 0.5) { if (!vrState.snapTurn) { camAngle.yaw -= Math.sign(turnVal) * Math.PI / 4; vrState.snapTurn = true; } } else { vrState.snapTurn = false; } if (gp.buttons[4]?.pressed && Math.abs(playerBody.velocity.y) < 1) playerBody.velocity.y = CFG.player.jump; if (gp.buttons[0]?.pressed && !vrState.right.metsuLock) { actionMetsu(); vrState.right.metsuLock = true; } if (!gp.buttons[0]?.pressed) vrState.right.metsuLock = false; const grip = gp.buttons[1]?.pressed; if (grip) { if (!vrState.right.drawing) { vrState.right.drawing = true; vrState.right.startPos.copy(ctrlPos); const g = new THREE.BoxGeometry(1,1,1); const m = new THREE.MeshPhongMaterial({color: CFG.colors.drawGhost, transparent: true, opacity: 0.5, side: THREE.DoubleSide}); vrState.right.mesh = new THREE.Mesh(g, m); vrState.right.mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 }))); vrState.right.mesh.position.copy(ctrlPos); scene.add(vrState.right.mesh); } else { const diff = ctrlPos.clone().sub(vrState.right.startPos); const sx = 1.0 + Math.abs(diff.x) * CFG.kekkai.sensitivity; const sy = 1.0 + Math.abs(diff.y) * CFG.kekkai.sensitivity; const sz = 1.0 + Math.abs(diff.z) * CFG.kekkai.sensitivity; if (vrState.right.mesh) vrState.right.mesh.scale.set(sx, sy, sz); } } else { if (vrState.right.drawing) { if (vrState.right.mesh) { const s = vrState.right.mesh.scale; const p = vrState.right.mesh.position.clone(); createKekkai(p, s, 0, true); safeRemoveMesh(vrState.right.mesh); vrState.right.mesh = null; } vrState.right.drawing = false; } } } } }
@@ -195,7 +192,7 @@ function loop(t) {
   const fW = CFG.field.width, fD = CFG.field.depth; enemies.forEach(e => { e.mesh.position.copy(e.body.position); e.mesh.quaternion.copy(e.body.quaternion); if (e.body.position.y < -10) killEnemy(e); const isOut = Math.abs(e.body.position.x) > fW / 2 + 2 || Math.abs(e.body.position.z) > fD / 2 + 2; if (isOut) { if (!e.body.outsideTimer) e.body.outsideTimer = 0; e.body.outsideTimer += dt; if (e.body.outsideTimer > 20.0) { showMsg("敵逃亡!", "#aaa"); removeEnemy(e); return; } const cu = new CANNON.Vec3(0, 25, 0), dr = cu.vsub(e.body.position); dr.normalize(); e.body.applyForce(dr.scale(e.isGiant ? 200 : 40), e.body.position); } else { e.body.outsideTimer = 0; const target = (vip && vip.hp > 0) ? vip.body.position : playerBody.position; const d = target.vsub(e.body.position); d.normalize(); e.body.applyForce(d.scale(e.isGiant ? 100 : 20), e.body.position); if (vip && e.body.position.distanceTo(vip.body.position) < 2.0 && Math.random() < 0.05) { vip.hp -= 5; spawnParticle(vip.body.position, 5, 0xff0000); } } });
   renderer.render(scene, camera);
 }
-document.getElementById('vrBtn').addEventListener('click', () => { if (navigator.xr) navigator.xr.requestSession('immersive-vr').then(s => { renderer.xr.setSession(s); els.novr.forEach(e => e.style.opacity = 0); s.addEventListener('end', () => els.novr.forEach(e => e.style.opacity = 1)); }); }); window.onload = init;
+window.onload = init;
 </script>
 </body>
 </html>
