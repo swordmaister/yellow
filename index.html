@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<title>真・結界師VR — v6.8 Final Release</title>
+<title>真・結界師VR — v7.0 Head-Aim & Physics</title>
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#87CEEB">
 <style>
@@ -120,17 +120,15 @@ let gameState = { wave: 1, kills: 0, req: 3, nextSpawn: 0, playerHp: 100, isVipM
 let currentDist = CFG.dist.near, aimMarker, isPhysMode = false;
 let controllers = [], controllerGrips = [], vrHudMesh, vrHudCtx, vipGoalMesh = null;
 let lastT = 0;
-// Fixed: currentSession is declared here properly
 let currentSession = null;
 
 let vrState = { 
-  left: { drawing: false, startHandPos: new THREE.Vector3(), mesh: null, triggerHeld: false }, 
-  right: { drawing: false, startHandPos: new THREE.Vector3(), mesh: null, triggerHeld: false, metsuLock: false, bLock: false }, 
+  left: { drawing: false, startHandPos: new THREE.Vector3(), mesh: null, triggerHeld: false, physBody: null }, 
+  right: { drawing: false, startHandPos: new THREE.Vector3(), mesh: null, triggerHeld: false, metsuLock: false, bLock: false, physBody: null }, 
   snapTurn: false, barrierOrigin: new THREE.Vector3() 
 };
 
 let input = { x: 0, y: 0 }, camAngle = { yaw: 0, pitch: 0 };
-// Fixed: activePhysKekkai declared here
 let drawId = null, drawState = { active: false, startX: 0, startY: 0, ghost: null }, activePhysKekkai = null; 
 let stickId = null, stickStart = { x: 0, y: 0 }, tapTime = 0, tapPos = { x: 0, y: 0 };
 let actId = null, actStartPos = { x: 0, y: 0 }, lookId = null, lastLook = { x: 0, y: 0 };
@@ -205,7 +203,6 @@ function healPlayer(val) { gameState.playerHp = Math.min(CFG.player.maxHp, gameS
 function removeKekkai(k) { safeRemoveMesh(k.mesh); if(k.body) world.removeBody(k.body); kekkaiList = kekkaiList.filter(o => o !== k); updateHUD(); }
 
 function createKekkai(p, s, r, isGhost=false) { 
-  // Collision: Both Phys and Ghost collide with Player once created
   const group = isGhost ? G_GHOST_KEKKAI : G_PHYS_KEKKAI;
   const mask = G_GROUND | G_PLAYER | G_ENEMY | G_VIP | G_PHYS_KEKKAI | G_GHOST_KEKKAI;
 
@@ -213,15 +210,21 @@ function createKekkai(p, s, r, isGhost=false) {
   b.position.copy(p); b.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), r); 
   
   if (!isGhost) { 
+    // Solid Box (Physical)
     b.addShape(new CANNON.Box(new CANNON.Vec3(s.x/2, s.y/2, s.z/2))); 
   } else { 
-    const t = 0.5; const x = s.x/2, y = s.y/2, z = s.z/2; 
-    b.addShape(new CANNON.Box(new CANNON.Vec3(t, y, z)), new CANNON.Vec3(-x, 0, 0)); 
-    b.addShape(new CANNON.Box(new CANNON.Vec3(t, y, z)), new CANNON.Vec3(x, 0, 0)); 
-    b.addShape(new CANNON.Box(new CANNON.Vec3(x, t, z)), new CANNON.Vec3(0, -y, 0)); 
-    b.addShape(new CANNON.Box(new CANNON.Vec3(x, t, z)), new CANNON.Vec3(0, y, 0)); 
-    b.addShape(new CANNON.Box(new CANNON.Vec3(x, y, t)), new CANNON.Vec3(0, 0, -z)); 
-    b.addShape(new CANNON.Box(new CANNON.Vec3(x, y, t)), new CANNON.Vec3(0, 0, z)); 
+    // Hollow Box (Ghost) - Correctly Spaced for Player Entry
+    const t = 0.2; // Thin walls
+    const x = s.x/2, y = s.y/2, z = s.z/2; 
+    // Left/Right
+    b.addShape(new CANNON.Box(new CANNON.Vec3(t, y, z)), new CANNON.Vec3(-(x - t), 0, 0)); 
+    b.addShape(new CANNON.Box(new CANNON.Vec3(t, y, z)), new CANNON.Vec3((x - t), 0, 0)); 
+    // Top/Bottom
+    b.addShape(new CANNON.Box(new CANNON.Vec3(x, t, z)), new CANNON.Vec3(0, -(y - t), 0)); 
+    b.addShape(new CANNON.Box(new CANNON.Vec3(x, t, z)), new CANNON.Vec3(0, (y - t), 0)); 
+    // Front/Back
+    b.addShape(new CANNON.Box(new CANNON.Vec3(x, y, t)), new CANNON.Vec3(0, 0, -(z - t))); 
+    b.addShape(new CANNON.Box(new CANNON.Vec3(x, y, t)), new CANNON.Vec3(0, 0, (z - t))); 
   } 
   world.addBody(b); 
   
@@ -302,39 +305,17 @@ function actionKai() {
   } else { showMsg("結界なし", "#888"); } 
 }
 
+// Fixed: Always use Head (Camera) direction for Aiming
 function updateAimMarker() { 
   if(!aimMarker) return; 
-
   let origin = new THREE.Vector3();
-  let direction = new THREE.Vector3(0, 0, -1);
-  let aimed = false; 
-
-  if (renderer.xr.isPresenting) {
-    const rightCtl = controllers.find(c => c.userData.handedness === 'right') || renderer.xr.getController(1); 
-    
-    if(rightCtl && rightCtl.position.length() > 0.1) { 
-        origin.copy(rightCtl.position); 
-        direction.applyQuaternion(rightCtl.quaternion);
-        aimed = true;
-    }
-    
-    if (!aimed) {
-        const cam = renderer.xr.getCamera();
-        origin.copy(cam.position);
-        cam.getWorldDirection(direction);
-        aimed = true;
-    }
-    
-  } else {
-    origin.copy(playerGroup.position).add(new THREE.Vector3(0, CFG.player.height*0.8, 0));
-    const e = new THREE.Euler(camAngle.pitch, camAngle.yaw, 0, 'YXZ');
-    direction.applyEuler(e);
-    aimed = true;
-  }
-  
-  if (aimed) {
-    aimMarker.position.copy(origin).add(direction.multiplyScalar(currentDist));
-  }
+  let direction = new THREE.Vector3();
+  const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+  origin.copy(cam.position);
+  cam.getWorldDirection(direction);
+  // If Non-VR, offset origin to emulate head height if group is at feet
+  if (!renderer.xr.isPresenting) origin.copy(playerGroup.position).add(new THREE.Vector3(0, CFG.player.height*0.8, 0));
+  aimMarker.position.copy(origin).add(direction.multiplyScalar(currentDist));
   aimMarker.visible = true;
 }
 
@@ -425,17 +406,26 @@ function setupEnvironment(mat){
 }
 
 // --------------------------------------------------
-// 5. MOBILE INPUTS (Refactored for No-Collision Drawing)
+// 5. MOBILE INPUTS (Phys: Collision during draw / Ghost: Visual only)
 // --------------------------------------------------
 function createActiveMobile() { 
   const p = aimMarker.position.clone(), r = camAngle.yaw; 
-  // Visual Mesh Only - No Physics Body Yet
+  
+  // Create Physics Body immediately for Interaction
+  const group = G_PHYS_KEKKAI;
+  const mask = G_GROUND | G_PLAYER | G_ENEMY | G_VIP | G_PHYS_KEKKAI | G_GHOST_KEKKAI;
+  const b = new CANNON.Body({ mass: 0, material: new CANNON.Material('kek'), collisionFilterGroup: group, collisionFilterMask: mask });
+  b.position.copy(p); b.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), r);
+  b.addShape(new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5))); // Start size
+  world.addBody(b);
+
   const g = new THREE.BoxGeometry(1, 1, 1); 
   const m = new THREE.MeshPhongMaterial({ color: CFG.colors.drawPhys, transparent: true, opacity: 0.5, side: THREE.DoubleSide }); 
   const mesh = new THREE.Mesh(g, m); 
   mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 }))); 
   mesh.position.copy(p); mesh.rotation.y = r; scene.add(mesh); 
-  return { mesh: mesh, startP: p, startR: r, currentS: { x: 1, y: 1, z: 1 } }; 
+  
+  return { mesh: mesh, body: b, startP: p, startR: r, currentS: { x: 1, y: 1, z: 1 } }; 
 }
 
 function updateActiveMobile(k, dx, dy) { 
@@ -444,12 +434,19 @@ function updateActiveMobile(k, dx, dy) {
   k.mesh.scale.set(sx, sy, sz); 
   const newY = k.startP.y + (sy - 1.0) / 2; 
   k.mesh.position.y = newY; 
+  
+  // Update Physics Body real-time for interaction
+  k.body.position.y = newY;
+  k.body.shapes[0].halfExtents.set(sx/2, sy/2, sz/2);
+  k.body.shapes[0].updateConvexPolyhedronRepresentation();
+  k.body.updateBoundingRadius();
 }
 
 function finalizeMobile(k) { 
-  // Now create the real physics body and visual mesh
-  createKekkai(k.mesh.position, k.mesh.scale, k.startR, !isPhysMode);
-  safeRemoveMesh(k.mesh); // Remove the temporary drawing mesh
+  // Finalize: Just change visual color, body persists
+  k.mesh.material.color.setHex(CFG.colors.kekkai);
+  kekkaiList.push({ body: k.body, mesh: k.mesh, isShrinking: false, shrinkProgress: 1.0, isGhost: false });
+  spawnText("結", k.mesh.position, "#ff0"); updateHUD();
 }
 
 function setupMobileInputs(){
@@ -467,13 +464,13 @@ function setupMobileInputs(){
   els.btnAct.addEventListener('touchend',e=>{e.preventDefault();for(let i=0;i<e.changedTouches.length;i++){if(e.changedTouches[i].identifier===actId){const t=e.changedTouches[i];if(Math.hypot(t.clientX-actStartPos.x,t.clientY-actStartPos.y)>20)actionKai();else actionMetsu();actId=null;}}});
   els.modeBtn.addEventListener('touchstart',e=>{e.preventDefault(); e.stopPropagation(); isPhysMode = !isPhysMode; els.modeBtn.textContent = isPhysMode ? "モード: 顕現" : "モード: 幽体"; els.modeBtn.className = isPhysMode ? "phys" : "ghost"; els.btnDraw.style.background = isPhysMode ? "linear-gradient(135deg, #FFD700, #FF8C00)" : "linear-gradient(135deg, #03a9f4, #0288d1)"; els.btnDraw.innerHTML = isPhysMode ? "顕<br><span style='font-size:10px'>Hold</span>" : "結<br><span style='font-size:10px'>Hold</span>"; showMsg(isPhysMode ? "物理顕現モード" : "幽体結界モード", "#fff");});
   
-  // Mobile Draw Logic Modified
   els.btnDraw.addEventListener('touchstart',e=>{ e.preventDefault(); if(drawId!==null)return; if(kekkaiList.length>=CFG.kekkai.max){showMsg("上限到達","#f44");return;} const t=e.changedTouches[0]; drawId=t.identifier; els.btnDraw.classList.add('drawing'); 
     if(isPhysMode) { 
-      activePhysKekkai = createActiveMobile(); // Creates Mesh Only
+      // Phys: Create real body immediately
+      activePhysKekkai = createActiveMobile(); 
       activePhysKekkai.startX=t.clientX; activePhysKekkai.startY=t.clientY; 
-      activePhysKekkai.mesh.material.color.setHex(CFG.colors.drawPhys);
     } else { 
+      // Ghost: Visual only during draw
       drawState.active=true; drawState.startX=t.clientX; drawState.startY=t.clientY; 
       const gg=new THREE.BoxGeometry(1,1,1),gm=new THREE.MeshPhongMaterial({color:CFG.colors.drawGhost,transparent:true,opacity:0.5, side: THREE.DoubleSide}); 
       drawState.ghost=new THREE.Mesh(gg,gm); 
@@ -497,7 +494,7 @@ function setupMobileInputs(){
   
   els.btnDraw.addEventListener('touchend',e=>{ e.preventDefault(); for(let i=0;i<e.changedTouches.length;i++){if(e.changedTouches[i].identifier===drawId){ 
     if(isPhysMode && activePhysKekkai) { 
-      finalizeMobile(activePhysKekkai); // Adds Physics Body (blocking)
+      finalizeMobile(activePhysKekkai); 
       activePhysKekkai=null; 
     } else if(drawState.ghost) { 
       createKekkai(drawState.ghost.position,drawState.ghost.scale,drawState.ghost.rotation.y, true); 
@@ -519,8 +516,41 @@ function handleVRInput() { if (!renderer.xr.isPresenting) return; const session 
       if (gp.buttons[3]?.pressed && Math.abs(playerBody.velocity.y) < 1) playerBody.velocity.y = CFG.player.jump; 
       if (gp.buttons[0]?.pressed && !vrState.left.triggerHeld) { actionKai(); vrState.left.triggerHeld = true; } 
       if (!gp.buttons[0]?.pressed) vrState.left.triggerHeld = false; 
+      
       const grip = gp.buttons[1]?.pressed; 
-      if (grip) { if (!vrState.left.drawing) { if (kekkaiList.length >= CFG.kekkai.max) { showMsg("上限", "#f44"); } else { vrState.left.drawing = true; vrState.left.startHandPos.copy(ctrlPos); vrState.barrierOrigin.copy(aimMarker.position); const g = new THREE.BoxGeometry(1,1,1); const m = new THREE.MeshPhongMaterial({color: CFG.colors.drawPhys, transparent: true, opacity: 0.5, side: THREE.DoubleSide}); vrState.left.mesh = new THREE.Mesh(g, m); vrState.left.mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 }))); vrState.left.mesh.position.copy(vrState.barrierOrigin); scene.add(vrState.left.mesh); } } else { const diff = ctrlPos.clone().sub(vrState.left.startHandPos); const sx = 1.0 + Math.abs(diff.x) * CFG.kekkai.sensitivity; const sy = 1.0 + Math.abs(diff.y) * CFG.kekkai.sensitivity; const sz = 1.0 + Math.abs(diff.z) * CFG.kekkai.sensitivity; if (vrState.left.mesh) { vrState.left.mesh.scale.set(sx, sy, sz); } } } else { if (vrState.left.drawing) { if (vrState.left.mesh) { createKekkai(vrState.left.mesh.position, vrState.left.mesh.scale, 0, false); safeRemoveMesh(vrState.left.mesh); vrState.left.mesh = null; } vrState.left.drawing = false; } } 
+      if (grip) { 
+        if (!vrState.left.drawing) { 
+          if (kekkaiList.length >= CFG.kekkai.max) { showMsg("上限", "#f44"); } 
+          else { 
+            vrState.left.drawing = true; vrState.left.startHandPos.copy(ctrlPos); vrState.barrierOrigin.copy(aimMarker.position); 
+            const g = new THREE.BoxGeometry(1,1,1); const m = new THREE.MeshPhongMaterial({color: CFG.colors.drawPhys, transparent: true, opacity: 0.5, side: THREE.DoubleSide}); 
+            vrState.left.mesh = new THREE.Mesh(g, m); 
+            vrState.left.mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 }))); 
+            vrState.left.mesh.position.copy(vrState.barrierOrigin); scene.add(vrState.left.mesh);
+            // Phys Body creation
+            const b = new CANNON.Body({ mass: 0, material: new CANNON.Material('kek'), collisionFilterGroup: G_PHYS_KEKKAI, collisionFilterMask: G_GROUND|G_PLAYER|G_ENEMY|G_VIP|G_PHYS_KEKKAI|G_GHOST_KEKKAI });
+            b.position.copy(vrState.barrierOrigin); b.addShape(new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5))); world.addBody(b);
+            vrState.left.physBody = b;
+          } 
+        } else { 
+          const diff = ctrlPos.clone().sub(vrState.left.startHandPos); 
+          const sx = 1.0 + Math.abs(diff.x) * CFG.kekkai.sensitivity; const sy = 1.0 + Math.abs(diff.y) * CFG.kekkai.sensitivity; const sz = 1.0 + Math.abs(diff.z) * CFG.kekkai.sensitivity; 
+          vrState.left.mesh.scale.set(sx, sy, sz); 
+          vrState.left.physBody.shapes[0].halfExtents.set(sx/2, sy/2, sz/2);
+          vrState.left.physBody.shapes[0].updateConvexPolyhedronRepresentation();
+          vrState.left.physBody.updateBoundingRadius();
+        } 
+      } else { 
+        if (vrState.left.drawing) { 
+          if (vrState.left.mesh) { 
+             vrState.left.mesh.material.color.setHex(CFG.colors.kekkai);
+             kekkaiList.push({ body: vrState.left.physBody, mesh: vrState.left.mesh, isShrinking: false, shrinkProgress: 1.0, isGhost: false });
+             spawnText("結", vrState.left.mesh.position, "#ff0"); updateHUD();
+             vrState.left.mesh = null; vrState.left.physBody = null;
+          } 
+          vrState.left.drawing = false; 
+        } 
+      } 
     }
     if (hand === 'right') { 
       const turnVal = gp.axes[2]; if (Math.abs(turnVal) > 0.5) { if (!vrState.snapTurn) { camAngle.yaw -= Math.sign(turnVal) * Math.PI / 4; vrState.snapTurn = true; } } else { vrState.snapTurn = false; } 
@@ -529,8 +559,27 @@ function handleVRInput() { if (!renderer.xr.isPresenting) return; const session 
       if (!gp.buttons[0]?.pressed) vrState.right.metsuLock = false; 
       if (gp.buttons[5]?.pressed && !vrState.right.bLock) { currentDist = (currentDist === CFG.dist.near) ? CFG.dist.far : CFG.dist.near; showMsg(currentDist === CFG.dist.near ? "近" : "遠", "#fff"); vrState.right.bLock = true; } 
       if (!gp.buttons[5]?.pressed) vrState.right.bLock = false; 
+      
       const grip = gp.buttons[1]?.pressed; 
-      if (grip) { if (!vrState.right.drawing) { vrState.right.drawing = true; vrState.right.startHandPos.copy(ctrlPos); vrState.barrierOrigin.copy(aimMarker.position); const g = new THREE.BoxGeometry(1,1,1); const m = new THREE.MeshPhongMaterial({color: CFG.colors.drawGhost, transparent: true, opacity: 0.5, side: THREE.DoubleSide}); vrState.right.mesh = new THREE.Mesh(g, m); vrState.right.mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 }))); vrState.right.mesh.position.copy(vrState.barrierOrigin); scene.add(vrState.right.mesh); } else { const diff = ctrlPos.clone().sub(vrState.right.startHandPos); const sx = 1.0 + Math.abs(diff.x) * CFG.kekkai.sensitivity; const sy = 1.0 + Math.abs(diff.y) * CFG.kekkai.sensitivity; const sz = 1.0 + Math.abs(diff.z) * CFG.kekkai.sensitivity; if (vrState.right.mesh) vrState.right.mesh.scale.set(sx, sy, sz); } } else { if (vrState.right.drawing) { if (vrState.right.mesh) { createKekkai(vrState.right.mesh.position, vrState.right.mesh.scale, 0, true); safeRemoveMesh(vrState.right.mesh); vrState.right.mesh = null; } vrState.right.drawing = false; } } 
+      if (grip) { 
+        if (!vrState.right.drawing) { 
+          vrState.right.drawing = true; vrState.right.startHandPos.copy(ctrlPos); vrState.barrierOrigin.copy(aimMarker.position); 
+          const g = new THREE.BoxGeometry(1,1,1); const m = new THREE.MeshPhongMaterial({color: CFG.colors.drawGhost, transparent: true, opacity: 0.5, side: THREE.DoubleSide}); 
+          vrState.right.mesh = new THREE.Mesh(g, m); vrState.right.mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 }))); 
+          vrState.right.mesh.position.copy(vrState.barrierOrigin); scene.add(vrState.right.mesh); 
+        } else { 
+          const diff = ctrlPos.clone().sub(vrState.right.startHandPos); const sx = 1.0 + Math.abs(diff.x) * CFG.kekkai.sensitivity; const sy = 1.0 + Math.abs(diff.y) * CFG.kekkai.sensitivity; const sz = 1.0 + Math.abs(diff.z) * CFG.kekkai.sensitivity; 
+          vrState.right.mesh.scale.set(sx, sy, sz); 
+        } 
+      } else { 
+        if (vrState.right.drawing) { 
+          if (vrState.right.mesh) { 
+            createKekkai(vrState.right.mesh.position, vrState.right.mesh.scale, 0, true); 
+            safeRemoveMesh(vrState.right.mesh); vrState.right.mesh = null; 
+          } 
+          vrState.right.drawing = false; 
+        } 
+      } 
     } 
   } 
 }
@@ -632,7 +681,7 @@ function init() {
     for (let i = 0; i < 3; i++) spawnEnemy(); 
     renderer.setAnimationLoop(loop);
 
-    // Removed the redundant "let" for correct global variable usage
+    let currentSession = null;
     document.getElementById('vrBtn').addEventListener('click', async () => { 
       if (currentSession) return; 
       if (!navigator.xr) return; 
