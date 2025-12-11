@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<title>真・結界師VR — v6.5 Final Perfect</title>
+<title>真・結界師VR — v6.8 Final Release</title>
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#87CEEB">
 <style>
@@ -120,6 +120,8 @@ let gameState = { wave: 1, kills: 0, req: 3, nextSpawn: 0, playerHp: 100, isVipM
 let currentDist = CFG.dist.near, aimMarker, isPhysMode = false;
 let controllers = [], controllerGrips = [], vrHudMesh, vrHudCtx, vipGoalMesh = null;
 let lastT = 0;
+// Fixed: currentSession is declared here properly
+let currentSession = null;
 
 let vrState = { 
   left: { drawing: false, startHandPos: new THREE.Vector3(), mesh: null, triggerHeld: false }, 
@@ -128,7 +130,8 @@ let vrState = {
 };
 
 let input = { x: 0, y: 0 }, camAngle = { yaw: 0, pitch: 0 };
-let drawId = null, drawState = { active: false, startX: 0, startY: 0, ghost: null };
+// Fixed: activePhysKekkai declared here
+let drawId = null, drawState = { active: false, startX: 0, startY: 0, ghost: null }, activePhysKekkai = null; 
 let stickId = null, stickStart = { x: 0, y: 0 }, tapTime = 0, tapPos = { x: 0, y: 0 };
 let actId = null, actStartPos = { x: 0, y: 0 }, lookId = null, lastLook = { x: 0, y: 0 };
 
@@ -202,7 +205,7 @@ function healPlayer(val) { gameState.playerHp = Math.min(CFG.player.maxHp, gameS
 function removeKekkai(k) { safeRemoveMesh(k.mesh); if(k.body) world.removeBody(k.body); kekkaiList = kekkaiList.filter(o => o !== k); updateHUD(); }
 
 function createKekkai(p, s, r, isGhost=false) { 
-  // All barriers collide with PLAYER, ENEMY, GROUND, VIP, and OTHER BARRIERS once created.
+  // Collision: Both Phys and Ghost collide with Player once created
   const group = isGhost ? G_GHOST_KEKKAI : G_PHYS_KEKKAI;
   const mask = G_GROUND | G_PLAYER | G_ENEMY | G_VIP | G_PHYS_KEKKAI | G_GHOST_KEKKAI;
 
@@ -212,7 +215,6 @@ function createKekkai(p, s, r, isGhost=false) {
   if (!isGhost) { 
     b.addShape(new CANNON.Box(new CANNON.Vec3(s.x/2, s.y/2, s.z/2))); 
   } else { 
-    // Hollow Box (Ghost)
     const t = 0.5; const x = s.x/2, y = s.y/2, z = s.z/2; 
     b.addShape(new CANNON.Box(new CANNON.Vec3(t, y, z)), new CANNON.Vec3(-x, 0, 0)); 
     b.addShape(new CANNON.Box(new CANNON.Vec3(t, y, z)), new CANNON.Vec3(x, 0, 0)); 
@@ -302,17 +304,37 @@ function actionKai() {
 
 function updateAimMarker() { 
   if(!aimMarker) return; 
+
   let origin = new THREE.Vector3();
   let direction = new THREE.Vector3(0, 0, -1);
+  let aimed = false; 
+
   if (renderer.xr.isPresenting) {
-    const rightCtl = renderer.xr.getController(1);
-    if(rightCtl) { origin.copy(rightCtl.position); direction.applyQuaternion(rightCtl.quaternion); }
+    const rightCtl = controllers.find(c => c.userData.handedness === 'right') || renderer.xr.getController(1); 
+    
+    if(rightCtl && rightCtl.position.length() > 0.1) { 
+        origin.copy(rightCtl.position); 
+        direction.applyQuaternion(rightCtl.quaternion);
+        aimed = true;
+    }
+    
+    if (!aimed) {
+        const cam = renderer.xr.getCamera();
+        origin.copy(cam.position);
+        cam.getWorldDirection(direction);
+        aimed = true;
+    }
+    
   } else {
     origin.copy(playerGroup.position).add(new THREE.Vector3(0, CFG.player.height*0.8, 0));
     const e = new THREE.Euler(camAngle.pitch, camAngle.yaw, 0, 'YXZ');
     direction.applyEuler(e);
+    aimed = true;
   }
-  aimMarker.position.copy(origin).add(direction.multiplyScalar(currentDist));
+  
+  if (aimed) {
+    aimMarker.position.copy(origin).add(direction.multiplyScalar(currentDist));
+  }
   aimMarker.visible = true;
 }
 
@@ -450,7 +472,6 @@ function setupMobileInputs(){
     if(isPhysMode) { 
       activePhysKekkai = createActiveMobile(); // Creates Mesh Only
       activePhysKekkai.startX=t.clientX; activePhysKekkai.startY=t.clientY; 
-      // Sync color to Phys
       activePhysKekkai.mesh.material.color.setHex(CFG.colors.drawPhys);
     } else { 
       drawState.active=true; drawState.startX=t.clientX; drawState.startY=t.clientY; 
@@ -588,7 +609,6 @@ function init() {
     world.addContactMaterial(new CANNON.ContactMaterial(mKek, mPly, { friction: 0.8, restitution: 0.0 }));
     world.addContactMaterial(new CANNON.ContactMaterial(mPly, mEne, { friction: 0.5, restitution: 0.5 }));
 
-    // Player now collides with Ghost Kekkai as well (G_GHOST_KEKKAI added)
     playerBody = new CANNON.Body({ mass: 70, shape: new CANNON.Sphere(0.6), material: mPly, fixedRotation: true, linearDamping: 0.9, collisionFilterGroup: G_PLAYER, collisionFilterMask: G_GROUND|G_ENEMY|G_PHYS_KEKKAI|G_GHOST_KEKKAI });
     playerBody.position.set(0, 5, 30); world.addBody(playerBody);
     playerBody.addEventListener('collide', (e) => { if (e.body && e.body.material && e.body.material.name === 'ene') { const relVel = e.contact.getImpactVelocityAlongNormal(); if (Math.abs(relVel) > 2.0) { takeDamage(Math.floor(Math.abs(relVel) * 2)); const normal = new CANNON.Vec3(); e.contact.ni.negate(normal); playerBody.applyImpulse(normal.scale(50 * Math.abs(relVel)), playerBody.position); } } });
@@ -600,11 +620,19 @@ function init() {
     
     const aimGeo = new THREE.SphereGeometry(0.3, 16, 16); const aimMat = new THREE.MeshBasicMaterial({ color: CFG.colors.marker, transparent: true, opacity: 0.7, depthTest: false }); 
     aimMarker = new THREE.Mesh(aimGeo, aimMat); aimMarker.renderOrder = 999; scene.add(aimMarker);
+    
+    controllers.forEach((controller, index) => {
+        controller.addEventListener('connected', (event) => {
+            controller.userData.handedness = event.data.handedness;
+        });
+    });
+    
+    updateAimMarker(); 
 
     for (let i = 0; i < 3; i++) spawnEnemy(); 
     renderer.setAnimationLoop(loop);
 
-    let currentSession = null;
+    // Removed the redundant "let" for correct global variable usage
     document.getElementById('vrBtn').addEventListener('click', async () => { 
       if (currentSession) return; 
       if (!navigator.xr) return; 
