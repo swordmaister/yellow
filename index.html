@@ -6,19 +6,15 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#87CEEB">
 <style>
-  /* --- CSS Styles --- */
   html, body { height: 100%; margin: 0; background: #87CEEB; color: #fff; font-family: sans-serif; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
   canvas { display: block; width: 100%; height: 100%; outline: none; }
-  
   #error-log { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); color:#ff5555; padding:20px; z-index:9999; white-space:pre-wrap; font-weight:bold; overflow:auto; }
   #damage-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(circle, transparent 60%, red 100%); opacity: 0; pointer-events: none; z-index: 50; transition: opacity 0.1s; }
-
-  /* UI Elements */
   .novr-only { transition: opacity 0.5s; }
 
+  /* HUD */
   #hud { position: fixed; top: 16px; left: 16px; pointer-events: none; z-index: 10; }
   @supports (padding-top: env(safe-area-inset-top)) { #hud { top: calc(env(safe-area-inset-top) + 10px); left: calc(env(safe-area-inset-left) + 16px); } }
-  
   .hud-box { background: rgba(0, 30, 60, 0.6); padding: 8px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.4); margin-bottom: 8px; backdrop-filter: blur(4px); min-width: 140px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
   .big-text { font-size: 18px; font-weight: bold; color: #ffeb3b; text-shadow: 1px 1px 2px #000; }
   .sub-text { font-size: 14px; color: #fff; text-shadow: 1px 1px 1px #000; }
@@ -37,7 +33,6 @@
   #padArea { position: absolute; bottom: 30px; right: 30px; width: 180px; height: 180px; pointer-events: none; margin-bottom: env(safe-area-inset-bottom); margin-right: env(safe-area-inset-right); }
   .btn { position: absolute; width: 65px; height: 65px; z-index: 10; border-radius: 50%; border: 2px solid rgba(255,255,255,0.6); background: rgba(40,50,80,0.8); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; pointer-events: auto; touch-action: manipulation; transition: transform 0.1s; }
   .btn:active { transform: scale(0.9); background: rgba(60,70,100,0.9); }
-  
   #btnUp { top: 0; left: 50%; transform: translateX(-50%); background: linear-gradient(135deg, #607d8b, #455a64); }
   #btnDown { bottom: 0; left: 50%; transform: translateX(-50%); background: linear-gradient(135deg, #9c27b0, #7b1fa2); width: 75px; height: 75px; font-size: 16px; }
   #btnLeft { top: 50%; left: 0; transform: translateY(-50%); background: linear-gradient(135deg, #f44336, #c62828); }
@@ -79,18 +74,9 @@
 <div id="damage-overlay"></div>
 
 <div id="hud" class="novr-only">
-  <div class="hud-box">
-    <span class="big-text" id="waveVal">WAVE 1</span><br>
-    <span class="sub-text">撃破: <span id="killVal">0</span> / 残: <span id="targetVal" style="color:#f88;">3</span></span>
-  </div>
-  <div class="hud-box">
-    <span class="sub-text">HP: <span id="hpText">100</span></span>
-    <div class="hp-bar-bg"><div id="hpBar" class="hp-bar-val"></div></div>
-  </div>
-  <div class="hud-box" id="vipBox" style="display:none; border-color:#0f0;">
-    <span class="sub-text" style="color:#0f0;">護衛対象 (脱出)</span>
-    <div class="hp-bar-bg"><div id="vipHpBar" class="hp-bar-val" style="background:#0ff;"></div></div>
-  </div>
+  <div class="hud-box"><span class="big-text" id="waveVal">WAVE 1</span><br><span class="sub-text">撃破: <span id="killVal">0</span> / 残: <span id="targetVal" style="color:#f88;">3</span></span></div>
+  <div class="hud-box"><span class="sub-text">HP: <span id="hpText">100</span></span><div class="hp-bar-bg"><div id="hpBar" class="hp-bar-val"></div></div></div>
+  <div class="hud-box" id="vipBox" style="display:none; border-color:#0f0;"><span class="sub-text" style="color:#0f0;">護衛対象 (脱出中)</span><div class="hp-bar-bg"><div id="vipHpBar" class="hp-bar-val" style="background:#0ff;"></div></div></div>
 </div>
 
 <div id="msgArea"><div id="flashMsg" class="flash-msg"></div></div>
@@ -114,7 +100,7 @@ import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFa
 import * as CANNON from 'cannon-es';
 
 // --------------------------------------------------
-// 1. CONFIG
+// 1. CONFIG & GLOBALS
 // --------------------------------------------------
 const CFG = {
   colors: {
@@ -132,9 +118,6 @@ const CFG = {
   field: { width: 120, depth: 160 }
 };
 
-// --------------------------------------------------
-// 2. GLOBALS
-// --------------------------------------------------
 let scene, camera, renderer, world;
 let playerBody, playerGroup;
 let enemies = [], kekkaiList = [], items = [], vip = null;
@@ -143,14 +126,12 @@ let currentDist = CFG.dist.near, aimMarker, isPhysMode = false;
 let controllers = [], controllerGrips = [], vrHudMesh, vrHudCtx, vipGoalMesh = null;
 let currentSession = null, lastT = 0;
 
-// VR State
 let vrState = { 
   left: { drawing: false, startHandPos: new THREE.Vector3(), mesh: null, triggerHeld: false }, 
   right: { drawing: false, startHandPos: new THREE.Vector3(), mesh: null, triggerHeld: false, metsuLock: false, bLock: false }, 
   snapTurn: false, barrierOrigin: new THREE.Vector3() 
 };
 
-// Mobile State
 let input = { x: 0, y: 0 }, camAngle = { yaw: 0, pitch: 0 };
 let drawId = null, drawState = { active: false, startX: 0, startY: 0, ghost: null }, activePhysKekkai = null;
 let stickId = null, stickStart = { x: 0, y: 0 }, tapTime = 0, tapPos = { x: 0, y: 0 };
@@ -169,13 +150,12 @@ const els = {
 };
 
 // --------------------------------------------------
-// 3. UTILS & HELPERS
+// 3. HELPER FUNCTIONS
 // --------------------------------------------------
 function showMsg(t, c) { 
   els.msg.textContent = t; els.msg.style.color = c; els.msg.style.opacity = 1; 
   setTimeout(() => els.msg.style.opacity = 0, 300); 
 }
-
 function spawnText(s, p, c) { 
   const cvs = document.createElement('canvas'); cvs.width = 128; cvs.height = 64; 
   const ctx = cvs.getContext('2d'); ctx.font = "bold 48px sans-serif"; ctx.fillStyle = c; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(s, 64, 32); 
@@ -185,7 +165,6 @@ function spawnText(s, p, c) {
   const a = () => { f += 0.25; sp.position.y += 0.05; sp.material.opacity = 1 - f; if (f < 1) requestAnimationFrame(a); else { scene.remove(sp); sp.material.map.dispose(); } }; 
   a(); 
 }
-
 function spawnParticle(p, n, c) { 
   const g = new THREE.BoxGeometry(0.25, 0.25, 0.25), m = new THREE.MeshBasicMaterial({ color: c }); 
   for (let i = 0; i < n; i++) { 
@@ -195,18 +174,16 @@ function spawnParticle(p, n, c) {
     a(); 
   } 
 }
-
 function safeRemoveMesh(mesh) { 
   if(!mesh) return; scene.remove(mesh); 
   if(mesh.geometry) mesh.geometry.dispose(); 
   if(mesh.material) { if(Array.isArray(mesh.material)) mesh.material.forEach(m => m.dispose()); else mesh.material.dispose(); } 
   if(mesh.children) { mesh.children.forEach(c => { if(c.geometry) c.geometry.dispose(); if(c.material) c.material.dispose(); }); } 
 }
-
 function updateHUD() { 
   if (renderer.xr.isPresenting && vrHudCtx) { 
     const ctx = vrHudCtx; ctx.clearRect(0, 0, 512, 128); 
-    ctx.fillStyle = "rgba(0, 20, 40, 0.4)"; ctx.fillRect(100,50,312,50); 
+    ctx.fillStyle = "rgba(0, 30, 60, 0.4)"; ctx.fillRect(100,50,312,50); 
     ctx.font = "bold 24px sans-serif"; ctx.fillStyle = "#fff"; ctx.textAlign="center"; 
     ctx.fillText(`W: ${gameState.wave}  K: ${gameState.kills}/${gameState.req}  HP: ${gameState.playerHp}`, 256, 82); 
     if (gameState.isVipMode && vip) { ctx.fillStyle = "#0ff"; ctx.fillText(`VIP: ${vip.hp}%`, 256, 30); } 
@@ -215,18 +192,16 @@ function updateHUD() {
     els.wVal.textContent = gameState.wave; els.kVal.textContent = gameState.kills; els.tVal.textContent = gameState.req; 
   } 
 }
-
 function takeDamage(val) { 
   gameState.playerHp = Math.max(0, gameState.playerHp - val); els.hpText.textContent = gameState.playerHp; 
   els.hpBar.style.width = (gameState.playerHp / CFG.player.maxHp * 100) + "%"; els.hpBar.style.backgroundColor = gameState.playerHp < 30 ? "#f00" : "#0f0"; 
   els.dmgOverlay.style.opacity = 0.5; setTimeout(() => els.dmgOverlay.style.opacity = 0, 150); 
   if (gameState.playerHp <= 0) showMsg("GAME OVER", "#f00"); 
 }
-
 function healPlayer(val) { gameState.playerHp = Math.min(CFG.player.maxHp, gameState.playerHp + val); els.hpText.textContent = gameState.playerHp; els.hpBar.style.width = (gameState.playerHp / CFG.player.maxHp * 100) + "%"; showMsg("RECOVER!", "#0f0"); }
 
 // --------------------------------------------------
-// 4. ENVIRONMENT SETUP
+// 4. ENVIRONMENT & OBJECTS
 // --------------------------------------------------
 function setupEnvironment(mat){
   const sun=new THREE.DirectionalLight(0xffffee,1.2); sun.position.set(-50,100,50); sun.castShadow=true; sun.shadow.mapSize.set(2048,2048); sun.shadow.camera.left=-100; sun.shadow.camera.right=100; sun.shadow.camera.top=100; sun.shadow.camera.bottom=-100; scene.add(sun); scene.add(new THREE.AmbientLight(0x666677,0.7));
@@ -237,11 +212,7 @@ function setupEnvironment(mat){
 
   const FW=CFG.field.width,FD=CFG.field.depth,WH=8;
   const gateW = 24; const wallW = (FW - gateW) / 2;
-  createBox(-FW/2 + wallW/2, WH/2, FD/2+1, wallW, WH, 2, CFG.colors.wall); 
-  createBox(FW/2 - wallW/2, WH/2, FD/2+1, wallW, WH, 2, CFG.colors.wall); 
-  createBox(-FW/2-1,WH/2,0,2,WH,FD+2,CFG.colors.wall); 
-  createBox(FW/2+1,WH/2,0,2,WH,FD+2,CFG.colors.wall); 
-  
+  createBox(-FW/2 + wallW/2, WH/2, FD/2+1, wallW, WH, 2, CFG.colors.wall); createBox(FW/2 - wallW/2, WH/2, FD/2+1, wallW, WH, 2, CFG.colors.wall); createBox(-FW/2-1,WH/2,0,2,WH,FD+2,CFG.colors.wall); createBox(FW/2+1,WH/2,0,2,WH,FD+2,CFG.colors.wall); 
   const bH=30,bZ=-FD/2-20; createBox(0,bH/2,bZ,FW,bH,40,CFG.colors.building);
   for(let i=-FW/2+5;i<FW/2;i+=10)for(let j=5;j<28;j+=7){const w=new THREE.Mesh(new THREE.PlaneGeometry(4,4),new THREE.MeshBasicMaterial({color:0x87CEFA})); w.position.set(i,j,bZ+20+0.1); scene.add(w);}
   createBox(0, bH+1, bZ, FW, 2, 40, CFG.colors.concrete);
@@ -250,36 +221,26 @@ function setupEnvironment(mat){
   const createRampFence = (x, z, length, rotY) => {
       const shape = new THREE.Shape(); shape.moveTo(0,0); shape.lineTo(0, rampH); shape.lineTo(rampW, 0); shape.lineTo(0,0);
       const geo = new THREE.ExtrudeGeometry(shape, { steps: 1, depth: length, bevelEnabled: false }); const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color: CFG.colors.concrete}));
-      m.position.set(0, 0, -length/2); 
-      const wrapper = new THREE.Object3D(); wrapper.add(m);
-      wrapper.position.set(x, bH+1, z); wrapper.rotation.y = rotY; scene.add(wrapper);
+      m.position.set(0, 0, -length/2); const wrapper = new THREE.Object3D(); wrapper.add(m); wrapper.position.set(x, bH+1, z); wrapper.rotation.y = rotY; scene.add(wrapper);
       const ang = Math.atan2(rampH, rampW); const hyp = Math.sqrt(rampH**2 + rampW**2);
-      const b = new CANNON.Body({mass:0, material:mat});
-      b.addShape(new CANNON.Box(new CANNON.Vec3(hyp/2, 0.1, length/2)), new CANNON.Vec3(rampW/2, rampH/2, 0), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), -ang));
-      b.addShape(new CANNON.Box(new CANNON.Vec3(0.1, rampH/2, length/2)), new CANNON.Vec3(0, rampH/2, 0));
+      const b = new CANNON.Body({mass:0, material:mat}); b.addShape(new CANNON.Box(new CANNON.Vec3(hyp/2, 0.1, length/2)), new CANNON.Vec3(rampW/2, rampH/2, 0), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), -ang)); b.addShape(new CANNON.Box(new CANNON.Vec3(0.1, rampH/2, length/2)), new CANNON.Vec3(0, rampH/2, 0));
       b.position.set(x, bH+1, z); b.quaternion.setFromAxisAngle(new CANNON.Vec3(0,1,0), rotY); world.addBody(b);
   };
   createRampFence(0, bZ-20, FW, -Math.PI/2); createRampFence(-FW/2, bZ, 40, 0); createRampFence(FW/2, bZ, 40, Math.PI);
-  const landW=8; const gapW = landW + 2; const landX = FW/2 - landW/2 - 2;
-  const gapStart = landX - gapW/2; const gapEnd = landX + gapW/2;
-  createRampFence((-FW/2 + gapStart)/2, bZ+20, gapStart - (-FW/2), Math.PI/2); 
-  createRampFence((gapEnd + FW/2)/2, bZ+20, FW/2 - gapEnd, Math.PI/2); 
+  const landW=8; const gapW = landW + 2; const landX = FW/2 - landW/2 - 2; const gapStart = landX - gapW/2; const gapEnd = landX + gapW/2;
+  createRampFence((-FW/2 + gapStart)/2, bZ+20, gapStart - (-FW/2), Math.PI/2); createRampFence((gapEnd + FW/2)/2, bZ+20, FW/2 - gapEnd, Math.PI/2); 
 
   const wtX = FW/2 - 8, wtZ = bZ - 8, wtBaseH = bH+2; const wtTank = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 6, 16), new THREE.MeshStandardMaterial({color: CFG.colors.concrete})); wtTank.position.set(wtX, wtBaseH + 8, wtZ); wtTank.castShadow=true; scene.add(wtTank); const wtTankBody = new CANNON.Body({mass:0, material:mat}); wtTankBody.addShape(new CANNON.Cylinder(4,4,6,16)); wtTankBody.position.copy(wtTank.position); world.addBody(wtTankBody);
   for(let i=0; i<4; i++){ const ang = i * Math.PI/2; const m=new THREE.Mesh(new THREE.BoxGeometry(0.5,5,0.5), new THREE.MeshStandardMaterial({color:CFG.colors.iron})); m.position.set(wtX + Math.cos(ang)*3, wtBaseH + 2.5, wtZ + Math.sin(ang)*3); scene.add(m); }
 
   const stW=6, stRise=bH, stRun=60; const landD=stW+2; const landY = bH; const landZ = bZ + 20 + landD/2;
   createBox(landX, landY, landZ, landW, 1, landD, CFG.colors.concrete); 
-  const slLen=Math.sqrt(stRun**2+stRise**2), slAng=Math.atan2(stRise, stRun); const slMidX = landX - landW/2 - stRun/2; const slMidY = stRise/2; 
-  const slZ = bZ + 20 + stW/2 + 0.05; 
+  const slLen=Math.sqrt(stRun**2+stRise**2), slAng=Math.atan2(stRise, stRun); const slMidX = landX - landW/2 - stRun/2; const slMidY = stRise/2; const slZ = bZ + 20 + stW/2 + 0.05; 
   const slB=new CANNON.Body({mass:0,material:mat}); slB.addShape(new CANNON.Box(new CANNON.Vec3(slLen/2,0.5,stW/2))); slB.position.set(slMidX, slMidY, slZ); const slQ = new THREE.Quaternion(); slQ.setFromEuler(new THREE.Euler(0,0,slAng)); slB.quaternion.copy(slQ); world.addBody(slB);
   const slM=new THREE.Mesh(new THREE.BoxGeometry(slLen,1,stW), new THREE.MeshStandardMaterial({color:CFG.colors.concrete})); slM.position.copy(slB.position); slM.quaternion.copy(slB.quaternion); scene.add(slM);
   
   const brRun=3.0, brRise=1.5; const brLen=Math.sqrt(brRun**2+brRise**2)+0.5; const brAng=Math.atan2(brRise, brRun); 
-  const brB = new CANNON.Body({mass:0, material:mat}); brB.addShape(new CANNON.Box(new CANNON.Vec3(landW/2, 0.2, brLen/2))); 
-  brB.position.set(landX, bH + 0.5 + brRise/2, bZ + 21.5); 
-  brB.quaternion.setFromEuler(brAng, 0, 0); 
-  world.addBody(brB);
+  const brB = new CANNON.Body({mass:0, material:mat}); brB.addShape(new CANNON.Box(new CANNON.Vec3(landW/2, 0.2, brLen/2))); brB.position.set(landX, bH + 0.5 + brRise/2, bZ + 21.5); brB.quaternion.setFromEuler(brAng, 0, 0); world.addBody(brB);
   const brM = new THREE.Mesh(new THREE.BoxGeometry(landW, 0.4, brLen), new THREE.MeshStandardMaterial({color:CFG.colors.concrete})); brM.position.copy(brB.position); brM.quaternion.copy(brB.quaternion); scene.add(brM);
   
   const hrH=1.2, hrT=0.1; const cRail = (x,y,z,w,h,d,rx=0,ry=0,rz=0) => { const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshStandardMaterial({color:CFG.colors.iron})); m.position.set(x,y,z); m.rotation.set(rx,ry,rz); scene.add(m); const b=new CANNON.Body({mass:0,material:mat}); b.addShape(new CANNON.Box(new CANNON.Vec3(w/2,h/2,d/2))); b.position.copy(m.position); b.quaternion.copy(m.quaternion); world.addBody(b); };
@@ -291,15 +252,12 @@ function setupEnvironment(mat){
   createBox(pX, pBaseH/2, pZ, pW+4, pBaseH, pD+4, CFG.colors.concrete);
   createBox(pX, pBaseH+1, pZ - pD/2 - 1, pW+2, 2, 2, CFG.colors.concrete); createBox(pX, pBaseH+1, pZ + pD/2 + 1, pW+2, 2, 2, CFG.colors.concrete); createBox(pX - pW/2 - 1, pBaseH+1, pZ, 2, 2, pD, CFG.colors.concrete); createBox(pX + pW/2 + 1, pBaseH+1, pZ, 2, 2, pD, CFG.colors.concrete);
   const water = new THREE.Mesh(new THREE.PlaneGeometry(pW, pD), new THREE.MeshBasicMaterial({color:0x00aaff, transparent:true, opacity:0.6, side:THREE.DoubleSide})); water.rotation.x = -Math.PI/2; water.position.set(pX, pBaseH+1.5, pZ); scene.add(water);
-  // Pool Ramps - Side placement
-  const prRun=25, prRise=pBaseH, prW=4; const prLen=Math.sqrt(prRun**2+prRise**2), prAng=Math.atan2(prRise, prRun);
-  const prMidY = prRise/2; const prMidZ = pZ; 
-  // Left Side
+  // Pool Ramps
+  const prRun=25, prRise=pBaseH, prW=4; const prLen=Math.sqrt(prRun**2+prRise**2), prAng=Math.atan2(prRise, prRun); const prMidY = prRise/2; const prMidZ = pZ; 
   const prMidX_L = pX - pW/2 - prW/2 - 2; 
   const prB_L=new CANNON.Body({mass:0,material:mat}); prB_L.addShape(new CANNON.Box(new CANNON.Vec3(prW/2, 0.5, prLen/2))); prB_L.position.set(prMidX_L, prMidY, prMidZ);
   const prQ_L = new THREE.Quaternion(); prQ_L.setFromEuler(new THREE.Euler(prAng, 0, 0)); prB_L.quaternion.copy(prQ_L); world.addBody(prB_L);
   const prM_L=new THREE.Mesh(new THREE.BoxGeometry(prW, 1, prLen), new THREE.MeshStandardMaterial({color:CFG.colors.concrete})); prM_L.position.copy(prB_L.position); prM_L.quaternion.copy(prB_L.quaternion); scene.add(prM_L);
-  // Right Side
   const prMidX_R = pX + pW/2 + prW/2 + 2;
   const prB_R=new CANNON.Body({mass:0,material:mat}); prB_R.addShape(new CANNON.Box(new CANNON.Vec3(prW/2, 0.5, prLen/2))); prB_R.position.set(prMidX_R, prMidY, prMidZ);
   const prQ_R = new THREE.Quaternion(); prQ_R.setFromEuler(new THREE.Euler(prAng, 0, 0)); prB_R.quaternion.copy(prQ_R); world.addBody(prB_R);
@@ -315,7 +273,7 @@ function setupEnvironment(mat){
 }
 
 // --------------------------------------------------
-// 5. GAME ACTIONS & LOGIC
+// 5. GAME ACTIONS
 // --------------------------------------------------
 function removeKekkai(k) { safeRemoveMesh(k.mesh); if(k.body) world.removeBody(k.body); kekkaiList = kekkaiList.filter(o => o !== k); updateHUD(); }
 function createKekkai(p, s, r, isGhost=false) { 
@@ -377,7 +335,7 @@ function setupMobileInputs(){
 }
 
 // --------------------------------------------------
-// 7. VR SETUP
+// 7. VR SETUP & LOOP
 // --------------------------------------------------
 function setupVRControllers() { const modelFactory = new XRControllerModelFactory(); for (let i = 0; i < 2; i++) { const controller = renderer.xr.getController(i); playerGroup.add(controller); controllers.push(controller); const grip = renderer.xr.getControllerGrip(i); grip.add(modelFactory.createControllerModel(grip)); playerGroup.add(grip); controllerGrips.push(grip); } }
 function setupVRHud() { const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 128; vrHudCtx = canvas.getContext('2d'); const tex = new THREE.CanvasTexture(canvas); vrHudMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.25), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.9, depthTest: false })); vrHudMesh.position.set(0, -0.4, -1.5); vrHudMesh.renderOrder = 9999; camera.add(vrHudMesh); }
@@ -386,9 +344,6 @@ function handleVRInput() { if (!renderer.xr.isPresenting) return; const session 
     if (hand === 'right') { const turnVal = gp.axes[2]; if (Math.abs(turnVal) > 0.5) { if (!vrState.snapTurn) { camAngle.yaw -= Math.sign(turnVal) * Math.PI / 4; vrState.snapTurn = true; } } else { vrState.snapTurn = false; } if (gp.buttons[4]?.pressed && Math.abs(playerBody.velocity.y) < 1) playerBody.velocity.y = CFG.player.jump; if (gp.buttons[0]?.pressed && !vrState.right.metsuLock) { actionMetsu(); vrState.right.metsuLock = true; } if (!gp.buttons[0]?.pressed) vrState.right.metsuLock = false; 
     if (gp.buttons[5]?.pressed && !vrState.right.bLock) { currentDist = (currentDist === CFG.dist.near) ? CFG.dist.far : CFG.dist.near; showMsg(currentDist === CFG.dist.near ? "近" : "遠", "#fff"); vrState.right.bLock = true; } if (!gp.buttons[5]?.pressed) vrState.right.bLock = false; const grip = gp.buttons[1]?.pressed; if (grip) { if (!vrState.right.drawing) { vrState.right.drawing = true; vrState.right.startHandPos.copy(ctrlPos); vrState.barrierOrigin.copy(aimMarker.position); const g = new THREE.BoxGeometry(1,1,1); const m = new THREE.MeshPhongMaterial({color: CFG.colors.drawGhost, transparent: true, opacity: 0.5, side: THREE.DoubleSide}); vrState.right.mesh = new THREE.Mesh(g, m); vrState.right.mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 }))); vrState.right.mesh.position.copy(vrState.barrierOrigin); scene.add(vrState.right.mesh); } else { const diff = ctrlPos.clone().sub(vrState.right.startHandPos); const sx = 1.0 + Math.abs(diff.x) * CFG.kekkai.sensitivity; const sy = 1.0 + Math.abs(diff.y) * CFG.kekkai.sensitivity; const sz = 1.0 + Math.abs(diff.z) * CFG.kekkai.sensitivity; if (vrState.right.mesh) vrState.right.mesh.scale.set(sx, sy, sz); } } else { if (vrState.right.drawing) { if (vrState.right.mesh) { createKekkai(vrState.right.mesh.position, vrState.right.mesh.scale, 0, true); safeRemoveMesh(vrState.right.mesh); vrState.right.mesh = null; } vrState.right.drawing = false; } } } } }
 
-// --------------------------------------------------
-// 8. LOOP & INIT
-// --------------------------------------------------
 function loop(t) {
   const dt = Math.min((t - lastT) / 1000, 0.1); lastT = t; world.step(1 / 60, dt, 3);
   if (renderer.xr.isPresenting) { handleVRInput(); const cam = renderer.xr.getCamera(); const d = new THREE.Vector3(); cam.getWorldDirection(d); d.y = 0; d.normalize(); const r = new THREE.Vector3(-d.z, 0, d.x); const m = d.multiplyScalar(-input.y).add(r.multiplyScalar(input.x)).multiplyScalar(CFG.player.speed); playerBody.velocity.x = m.x; playerBody.velocity.z = m.z; playerGroup.position.copy(playerBody.position); playerGroup.rotation.y = camAngle.yaw; } else { const yaw = camAngle.yaw, fwd = new THREE.Vector3(input.x, 0, input.y).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw); playerBody.velocity.x = fwd.x * CFG.player.speed; playerBody.velocity.z = fwd.z * CFG.player.speed; playerGroup.position.copy(playerBody.position).add(new THREE.Vector3(0, CFG.player.height, 0)); playerGroup.rotation.y = yaw; camera.rotation.x = camAngle.pitch; }
@@ -437,6 +392,7 @@ function init() {
   } catch (e) { console.error(e); alert("初期化エラー: " + e.message); }
 }
 
+let currentSession = null;
 document.getElementById('vrBtn').addEventListener('click', async () => { if (currentSession) return; if (!navigator.xr) return; try { const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'] }); renderer.xr.setSession(session); currentSession = session; els.novr.forEach(e => e.style.opacity = 0); session.addEventListener('end', () => { currentSession = null; els.novr.forEach(e => e.style.opacity = 1); }); } catch (e) { console.error("VR Init Error:", e); alert("VRモードの起動に失敗しました: " + e.message); } });
 
 window.onload = init;
