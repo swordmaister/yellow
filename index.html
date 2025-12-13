@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>VR Kekkai Sim - Speed & Sensitivity</title>
+    <title>VR Kekkai Sim - Final Fix</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; }
     </style>
@@ -22,42 +22,37 @@
     import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
     // ==========================================
-    // グローバル変数・設定
+    // グローバル変数
     // ==========================================
     let camera, scene, renderer;
     let controller1, controller2;
     let controllerGrip1, controllerGrip2;
     
-    // プレイヤー状態
+    // プレイヤー設定
     const playerState = {
-        velocity: new THREE.Vector3(),
-        isGrounded: false,
-        jumpStrength: 10.0,      // ジャンプ力
-        gravity: 20.0,           // 重力
         moveSpeed: 3.0,          // 移動速度
         rotationSpeed: 2.0,      // 回転速度
-        distanceMode: 'far'      // 'near' or 'far'
+        distanceMode: 'far',     // ターゲット距離モード
+        userGroup: null          // カメラの親グループ（移動用）
     };
 
-    // 結界・オブジェクト管理
+    // オブジェクト管理
     const barriers = [];    // 作成済み結界
     const enemies = [];     // 敵
-    const effects = [];     // エフェクト（文字、破片）
-    const tempMatrix = new THREE.Matrix4();
-    const raycaster = new THREE.Raycaster();
-
+    const effects = [];     // エフェクト
+    
     // 生成中の結界データ
     let activeBarrier = null; 
 
-    // ★修正3: 感度を前回のさらに30倍に設定（ベース値×30）
+    // ★修正③: 感度を30倍に設定（ベース値150 * 30）
     const BARRIER_SENSITIVITY = 150.0 * 30.0; 
 
-    // 生成ポイント（赤い点）
+    // ターゲットポイント（赤い点）
     let targetPointMesh;
     const targetDistanceFar = 10.0;
     const targetDistanceNear = 2.0;
 
-    // フォント読み込み用キャンバス
+    // フォント用キャンバス
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
 
@@ -72,14 +67,14 @@
         scene.background = new THREE.Color(0x111111);
         scene.fog = new THREE.Fog(0x111111, 0, 80);
 
-        // カメラ（ユーザーの頭）
+        // カメラ設定（VR時はHMDの位置に上書きされるが、初期位置として）
         camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
-        // グループに入れて移動操作しやすくする
+        
+        // プレイヤー移動用グループ
         const userGroup = new THREE.Group();
-        userGroup.position.set(0, 0, 0); // 初期位置
+        userGroup.position.set(0, 0, 0); 
         userGroup.add(camera);
         scene.add(userGroup);
-        // 参照用に保持
         playerState.userGroup = userGroup;
 
         // ライティング
@@ -89,7 +84,7 @@
         directionalLight.position.set(0, 10, 0);
         scene.add(directionalLight);
 
-        // 地面
+        // 床（地面）
         const floorGeometry = new THREE.PlaneGeometry(200, 200);
         const floorMaterial = new THREE.MeshStandardMaterial({ 
             color: 0x333333, 
@@ -107,10 +102,12 @@
         targetPointMesh = new THREE.Mesh(pointGeo, pointMat);
         scene.add(targetPointMesh);
 
-        // 敵（テスト用ターゲット）
-        createTestEnemy(0, 1.5, -5);
-        createTestEnemy(3, 1.5, -8);
-        createTestEnemy(-3, 1.5, -8);
+        // ★修正④: 敵（テスト用）の配置
+        // ConeGeometry(半径0.5, 高さ1.5) の中心は高さの半分(0.75)にあるため
+        // y=0.75 に置くことで底面が y=0（地面）に接します。
+        createTestEnemy(0, 0.75, -5);
+        createTestEnemy(3, 0.75, -8);
+        createTestEnemy(-3, 0.75, -8);
 
         // レンダラー設定
         renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -121,29 +118,28 @@
 
         document.body.appendChild(VRButton.createButton(renderer));
 
-        // コントローラー設定
+        // コントローラーセットアップ
         setupControllers();
 
         window.addEventListener('resize', onWindowResize);
     }
 
     function setupControllers() {
-        // Controller 1 (Right assumed usually, but depends on connection order. Logic handles handedness)
+        // 右手・左手の判定は接続順やブラウザによるが、inputSource.handednessで判定して処理する
         controller1 = renderer.xr.getController(0);
-        controller1.addEventListener('selectstart', onSelectStart); // Trigger Down
-        controller1.addEventListener('squeeze', onSqueezeStart);    // Grip Down
-        controller1.addEventListener('squeezeend', onSqueezeEnd);   // Grip Up
+        controller1.addEventListener('selectstart', onSelectStart); // トリガー
+        controller1.addEventListener('squeeze', onSqueezeStart);    // グリップ開始
+        controller1.addEventListener('squeezeend', onSqueezeEnd);   // グリップ終了
         scene.add(controller1);
 
-        // Controller 2 (Left)
         controller2 = renderer.xr.getController(1);
         controller2.addEventListener('selectstart', onSelectStart);
         controller2.addEventListener('squeeze', onSqueezeStart);
         controller2.addEventListener('squeezeend', onSqueezeEnd);
         scene.add(controller2);
 
+        // コントローラーの見た目（3Dモデル）
         const controllerModelFactory = new XRControllerModelFactory();
-
         controllerGrip1 = renderer.xr.getControllerGrip(0);
         controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
         scene.add(controllerGrip1);
@@ -154,46 +150,41 @@
     }
 
     // ==========================================
-    // 入力イベントハンドラ
+    // 入力イベント
     // ==========================================
     
-    // トリガーボタン (人差し指) - アクション実行
+    // トリガー: アクション実行 (解/滅)
     function onSelectStart(event) {
         const controller = event.target;
         const inputSource = controller.inputSource;
         if (!inputSource) return;
 
-        const handedness = inputSource.handedness; // 'left' or 'right'
+        const handedness = inputSource.handedness;
 
         if (handedness === 'left') {
-            // 左トリガー: 「解」 (一番近い結界を解除)
+            // 左トリガー: 解
             removeNearestBarrier();
             showTextEffect("解", targetPointMesh.position, 0x00ffff);
         } else if (handedness === 'right') {
-            // 右トリガー: 「滅」 (結界内部の敵を攻撃して結界消滅)
+            // 右トリガー: 滅
             destroyBarrierAction();
             showTextEffect("滅", targetPointMesh.position, 0xff0000);
         }
     }
 
-    // グリップボタン - 結界生成開始
+    // グリップ: 結界生成開始
     function onSqueezeStart(event) {
         const controller = event.target;
         const inputSource = controller.inputSource;
         if (!inputSource) return;
 
-        // 既に作成中は無視（両手同時押しなどの場合、先に押した方優先）
+        // 既に生成中なら無視
         if (activeBarrier) return;
 
-        const type = (inputSource.handedness === 'left') ? 'solid' : 'ghost'; // 左:顕現(青), 右:ゴースト(緑)
+        const type = (inputSource.handedness === 'left') ? 'solid' : 'ghost'; // 左=青, 右=緑
         
-        // 開始時のコントローラー位置を記録
-        const startPos = controller.position.clone();
-        
-        // 結界の初期メッシュ作成（ターゲットポイントを中心に）
+        // 結界初期化
         const geometry = new THREE.BoxGeometry(1, 1, 1);
-        // ピボット調整のため、ジオメトリ自体はずらさず、Scaleで制御する
-        
         const material = new THREE.MeshStandardMaterial({
             color: type === 'solid' ? 0x0088ff : 0x00ff88,
             transparent: true,
@@ -205,27 +196,20 @@
 
         const mesh = new THREE.Mesh(geometry, material);
         mesh.position.copy(targetPointMesh.position);
-        mesh.scale.set(0.1, 0.1, 0.1); // 最初は極小
+        mesh.scale.set(0.1, 0.1, 0.1); // 極小からスタート
         scene.add(mesh);
 
         activeBarrier = {
             mesh: mesh,
             controller: controller,
-            startControllerPos: startPos,
-            type: type,
-            initialCenter: targetPointMesh.position.clone()
+            startControllerPos: controller.position.clone(), // 開始位置記録
         };
     }
 
-    // グリップボタン離す - 結界生成完了
+    // グリップ離す: 生成完了
     function onSqueezeEnd(event) {
         if (activeBarrier && activeBarrier.controller === event.target) {
-            // 配列に保存
             barriers.push(activeBarrier.mesh);
-            
-            // 完了エフェクト（パッと消える）
-            // 「結」などの文字を出しても良いが、ここでは作成完了感のみ
-            
             activeBarrier = null;
         }
     }
@@ -238,7 +222,7 @@
     }
 
     function render() {
-        const dt = 0.016; // 固定デルタタイム簡易版
+        const dt = 0.016; // 固定デルタタイム
         
         handleInput(dt);
         updateActiveBarrier();
@@ -249,20 +233,17 @@
     }
 
     // ==========================================
-    // ロジック詳細
+    // 各種更新ロジック
     // ==========================================
 
-    // プレイヤー移動・視点・ボタン操作
     function handleInput(dt) {
         const session = renderer.xr.getSession();
         if (!session) return;
 
         let inputSources = session.inputSources;
-        
-        // ユーザーグループ（カメラ親）の移動用ベクトル
         const moveVector = new THREE.Vector3(0, 0, 0);
 
-        // カメラの向き（Y軸回転のみ抽出）
+        // カメラ方向（Y軸回転のみ）
         const cameraDirection = new THREE.Vector3();
         camera.getWorldDirection(cameraDirection);
         cameraDirection.y = 0;
@@ -271,64 +252,39 @@
         const cameraRight = new THREE.Vector3();
         cameraRight.crossVectors(cameraDirection, new THREE.Vector3(0, 1, 0));
 
-        // 左右コントローラーの入力走査
         for (const source of inputSources) {
             if (!source.gamepad) continue;
             const gp = source.gamepad;
             const handedness = source.handedness;
 
             // --- 左手: 移動 ---
-            if (handedness === 'left') {
-                // axes[2] = X (左右), axes[3] = Y (前後) ※機種により異なる場合あり
-                // Quest 2: [2]=stick X, [3]=stick Y. 
-                // 左入力で -1, 右入力で +1
+            if (handedness === 'left' && gp.axes.length >= 4) {
+                // Quest等: axes[2]=X, axes[3]=Y
                 
-                if (gp.axes.length >= 4) {
-                    // ★修正1: 左右移動の符号を反転 (-gp.axes[2])
-                    // 通常: 右(+1)で右へ。左(-1)で左へ。
-                    // ユーザー要望「反対」→ 入力値をマイナスにする
-                    const inputX = -gp.axes[2]; 
-                    const inputY = gp.axes[3]; 
+                // ★修正①: 左右移動の反転
+                // 元の値が左(-1)～右(+1)なので、マイナスを付けて反転させる
+                const inputX = -gp.axes[2]; 
+                const inputY = gp.axes[3]; 
 
-                    // 前後移動 (視点正面基準)
-                    if (Math.abs(inputY) > 0.1) {
-                        moveVector.addScaledVector(cameraDirection, inputY * playerState.moveSpeed * dt);
-                    }
-                    // 左右カニ歩き (視点右方向基準)
-                    if (Math.abs(inputX) > 0.1) {
-                        moveVector.addScaledVector(cameraRight, inputX * playerState.moveSpeed * dt);
-                    }
+                // 前後
+                if (Math.abs(inputY) > 0.1) {
+                    moveVector.addScaledVector(cameraDirection, inputY * playerState.moveSpeed * dt);
                 }
-
-                // A/B/X/Yボタンの処理 (Gamepad buttons)
-                // Quest: Left X=[0], Y=[1]? or [3]/[4]? mapping varies.
-                // WebXR standard mapping: 
-                // [4] = A (or X on left), [5] = B (or Y on left). This is tricky.
-                // Checking specific buttons usually requires knowing the profile.
-                // 簡易的にボタン押下チェック
+                // 左右
+                if (Math.abs(inputX) > 0.1) {
+                    moveVector.addScaledVector(cameraRight, inputX * playerState.moveSpeed * dt);
+                }
             }
 
-            // --- 右手: 視点回転・アクション ---
-            if (handedness === 'right') {
-                if (gp.axes.length >= 4) {
-                    const rotX = gp.axes[2];
-                    // 視点回転 (スナップターンまたはスムーズ)
-                    if (Math.abs(rotX) > 0.2) {
-                        playerState.userGroup.rotation.y -= rotX * playerState.rotationSpeed * dt;
-                    }
+            // --- 右手: 回転・その他 ---
+            if (handedness === 'right' && gp.axes.length >= 4) {
+                const rotX = gp.axes[2];
+                // 視点回転
+                if (Math.abs(rotX) > 0.2) {
+                    playerState.userGroup.rotation.y -= rotX * playerState.rotationSpeed * dt;
                 }
-
-                // ボタン: A(Jump), B(Distance)
-                // standard mapping: [4]=A, [5]=B
-                if (gp.buttons[4] && gp.buttons[4].pressed) {
-                    // ジャンプ (簡易)
-                    if (playerState.userGroup.position.y <= 0.1) { // 地面にいる時
-                        // ジャンプ処理は物理演算が必要だが、ここでは簡易的にY位置上昇
-                        // 今回は詳細省略（移動メイン）
-                    }
-                }
-
-                // Bボタン: 遠近切り替え (トグル: 押した瞬間のみ反応させるためのフラグ管理が必要)
+                
+                // Bボタン(通常[5])で距離切り替え
                 if (gp.buttons[5] && gp.buttons[5].pressed) {
                     if (!playerState.bButtonWasPressed) {
                         playerState.distanceMode = (playerState.distanceMode === 'near') ? 'far' : 'near';
@@ -340,15 +296,12 @@
             }
         }
 
-        // 移動適用
         playerState.userGroup.position.add(moveVector);
     }
 
-    // ターゲットポイント（赤い点）の更新
     function updateTargetPoint() {
         const dist = (playerState.distanceMode === 'near') ? targetDistanceNear : targetDistanceFar;
         
-        // カメラの前方に配置
         const dir = new THREE.Vector3();
         camera.getWorldDirection(dir);
         dir.normalize();
@@ -356,67 +309,45 @@
         const targetPos = new THREE.Vector3();
         targetPos.copy(camera.position).addScaledVector(dir, dist);
         
-        // プレイヤーの足元高さではなく、視線の先だが高さはある程度固定しないと操作しづらい
-        // 原作イメージだと「狙った空間座標」なので、そのまま視線の先でOK
-        // ただし地面より下には行かないように
-        if (targetPos.y < 0) targetPos.y = 0.1;
+        // 地面より下にめり込まないように補正
+        if (targetPos.y < 0.05) targetPos.y = 0.05;
 
         targetPointMesh.position.copy(targetPos);
     }
 
-    // 結界生成・変形ロジック
     function updateActiveBarrier() {
         if (!activeBarrier) return;
 
         const controller = activeBarrier.controller;
         const currentPos = controller.position.clone();
         
-        // コントローラーの移動量 (ローカル座標系での差分)
+        // 手の移動量
         const diff = new THREE.Vector3().subVectors(currentPos, activeBarrier.startControllerPos);
 
-        // ★修正3: 感度を超強化 (BARRIER_SENSITIVITY)
-        // 上(Y)に動かす -> 高さ(Y)拡大
-        // 横(X)に動かす -> 幅(X)拡大
-        // 奥/手前(Z) -> 奥行き(Z)拡大
-        // 斜め -> 立方的拡大
-        
-        // コントローラーの回転を考慮して「コントローラーにとっての上下左右」にするには
-        // コントローラーの逆回転行列をかける必要がありますが、
-        // ユーザー指示は「空間で動かす」なのでワールド座標差分で計算します。
-
-        // 基本サイズ1.0 + 移動量 * 感度
-        // 負の値にならないようにMath.abs + 最低保証
+        // ★修正③: 感度30倍 (BARRIER_SENSITIVITY使用)
+        // 手の移動量(diff)に応じてスケールを加算
         const scaleX = 1.0 + Math.abs(diff.x) * BARRIER_SENSITIVITY;
         const scaleY = 1.0 + Math.abs(diff.y) * BARRIER_SENSITIVITY;
         const scaleZ = 1.0 + Math.abs(diff.z) * BARRIER_SENSITIVITY;
 
-        // 斜め（立方体的）判定: 
-        // 厳密に分けずとも、X,Y,Z成分それぞれの動きに合わせて拡大すれば、
-        // 斜めに動かせばXYZ共に大きくなり立方体的に大きくなる。
-        
         activeBarrier.mesh.scale.set(scaleX, scaleY, scaleZ);
     }
 
-    // エフェクト更新
     function updateEffects(dt) {
         for (let i = effects.length - 1; i >= 0; i--) {
             const fx = effects[i];
-            
-            // ★修正2: エフェクト寿命管理
             fx.life -= dt;
             
-            // 拡大アニメーションなど
             if (fx.type === 'text') {
-                fx.mesh.position.y += dt * 0.5; // 少し上昇
-                fx.mesh.lookAt(camera.position); // 常にカメラ向く
+                fx.mesh.position.y += dt * 1.0; // 上昇速度少しアップ
+                fx.mesh.lookAt(camera.position);
             } else if (fx.type === 'shard') {
-                // 破片飛び散り
                 fx.mesh.position.addScaledVector(fx.velocity, dt);
                 fx.mesh.rotation.x += fx.rotationSpeed.x;
                 fx.mesh.rotation.y += fx.rotationSpeed.y;
             }
 
-            // フェードアウト（高速）
+            // フェードアウト
             if (fx.life < 0.2) {
                 fx.mesh.material.opacity = fx.life / 0.2;
             }
@@ -431,12 +362,13 @@
     }
 
     // ==========================================
-    // アクション関数
+    // アクション・エフェクト
     // ==========================================
 
     function createTestEnemy(x, y, z) {
+        // 高さ1.5, 半径0.5のコーン
         const geo = new THREE.ConeGeometry(0.5, 1.5, 16);
-        const mat = new THREE.MeshStandardMaterial({ color: 0xff00ff });
+        const mat = new THREE.MeshStandardMaterial({ color: 0xff00ff }); // 紫
         const enemy = new THREE.Mesh(geo, mat);
         enemy.position.set(x, y, z);
         scene.add(enemy);
@@ -444,9 +376,7 @@
     }
 
     function removeNearestBarrier() {
-        // 解：一番近い結界を探して削除
         if (barriers.length === 0) return;
-
         let nearest = null;
         let minDist = Infinity;
         const pos = targetPointMesh.position;
@@ -459,7 +389,8 @@
             }
         });
 
-        if (nearest && minDist < 5.0) { // ある程度近くないと反応しない
+        // 判定距離を少し甘めに設定
+        if (nearest && minDist < 8.0) {
             createDebris(nearest.position, nearest.scale, nearest.material.color);
             scene.remove(nearest);
             barriers.splice(barriers.indexOf(nearest), 1);
@@ -467,16 +398,12 @@
     }
 
     function destroyBarrierAction() {
-        // 滅：ターゲットに近い結界を探し、その内部に敵がいれば敵も倒す
         if (barriers.length === 0) return;
-
-        // ターゲットポイントを含む、あるいは一番近い結界
         let targetBarrier = null;
         let minDist = Infinity;
         const targetPos = targetPointMesh.position;
 
         for (const b of barriers) {
-            // シンプルに中心点距離で判定
             const d = b.position.distanceTo(targetPos);
             if (d < minDist) {
                 minDist = d;
@@ -484,37 +411,31 @@
             }
         }
 
-        if (targetBarrier && minDist < 5.0) {
-            // 結界の範囲（簡易バウンディングボックス）
+        if (targetBarrier && minDist < 8.0) {
             const box = new THREE.Box3().setFromObject(targetBarrier);
             
-            // 敵が中に入っているか？
             for (let i = enemies.length - 1; i >= 0; i--) {
                 const enemy = enemies[i];
                 if (box.containsPoint(enemy.position)) {
-                    // 敵撃破演出
                     createDebris(enemy.position, new THREE.Vector3(1,1,1), 0xff00ff, 15);
                     scene.remove(enemy);
                     enemies.splice(i, 1);
                 }
             }
             
-            // 結界破砕演出（内向きに潰れるようなイメージだが、今回は破裂で表現）
             createDebris(targetBarrier.position, targetBarrier.scale, 0xff0000, 20);
             scene.remove(targetBarrier);
             barriers.splice(barriers.indexOf(targetBarrier), 1);
         }
     }
 
-    // 文字エフェクト生成
     function showTextEffect(text, position, colorHex) {
-        // Canvasでテクスチャ作成
         const size = 256;
         canvas.width = size;
         canvas.height = size;
         context.clearRect(0, 0, size, size);
         context.fillStyle = '#' + new THREE.Color(colorHex).getHexString();
-        context.font = 'bold 180px Arial'; // 明朝体が望ましいが標準フォントで
+        context.font = 'bold 200px Arial';
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         context.fillText(text, size/2, size/2);
@@ -530,29 +451,28 @@
         effects.push({
             type: 'text',
             mesh: sprite,
-            life: 0.5 // ★修正2: 寿命を0.5秒に設定（インパクト重視）
+            // ★修正②: 寿命を短縮(0.4秒)
+            life: 0.4
         });
     }
 
-    // 破片エフェクト生成
     function createDebris(pos, scale, color, count = 10) {
         const geo = new THREE.BoxGeometry(0.2, 0.2, 0.2);
         const mat = new THREE.MeshBasicMaterial({ color: color, transparent: true });
 
         for(let i=0; i<count; i++) {
             const mesh = new THREE.Mesh(geo, mat);
-            // 結界の大きさの範囲内にランダム配置
+            // 結界サイズ内に分散
             mesh.position.set(
                 pos.x + (Math.random() - 0.5) * scale.x,
                 pos.y + (Math.random() - 0.5) * scale.y,
                 pos.z + (Math.random() - 0.5) * scale.z
             );
             
-            // ランダムな飛び散り
             const velocity = new THREE.Vector3(
-                (Math.random() - 0.5) * 10,
-                (Math.random() - 0.5) * 10,
-                (Math.random() - 0.5) * 10
+                (Math.random() - 0.5) * 15,
+                (Math.random() - 0.5) * 15,
+                (Math.random() - 0.5) * 15
             );
 
             scene.add(mesh);
@@ -561,7 +481,8 @@
                 mesh: mesh,
                 velocity: velocity,
                 rotationSpeed: { x: Math.random(), y: Math.random() },
-                life: 0.4 // ★修正2: 寿命短く
+                // ★修正②: 寿命を短縮(0.4秒)
+                life: 0.4
             });
         }
     }
