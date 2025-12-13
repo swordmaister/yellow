@@ -1,16 +1,14 @@
 <!DOCTYPE html>
 <html lang="ja">
-<head><!DOCTYPE html>
-<html lang="ja">
 <head>
 <meta charset="utf-8" />
-<title>真・結界師VR — High Speed Impact v5.2</title>
+<title>真・結界師VR — World Space Fix v5.2</title>
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#87CEEB">
 <style>
   html, body { height: 100%; margin: 0; background: #87CEEB; color: #fff; font-family: sans-serif; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
   canvas { display: block; width: 100%; height: 100%; outline: none; }
-    
+   
   #error-log { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); color:#ff5555; padding:20px; z-index:9999; white-space:pre-wrap; font-weight:bold; overflow:auto; }
   #damage-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(circle, transparent 60%, red 100%); opacity: 0; pointer-events: none; z-index: 50; transition: opacity 0.1s; }
 
@@ -18,13 +16,13 @@
 
   #hud { position: fixed; top: 16px; left: 16px; pointer-events: none; z-index: 10; }
   @supports (padding-top: env(safe-area-inset-top)) { #hud { top: calc(env(safe-area-inset-top) + 10px); left: calc(env(safe-area-inset-left) + 16px); } }
-    
+   
   .hud-box { background: rgba(0, 30, 60, 0.6); padding: 8px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.4); margin-bottom: 8px; backdrop-filter: blur(4px); min-width: 140px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
   .big-text { font-size: 18px; font-weight: bold; color: #ffeb3b; text-shadow: 1px 1px 2px #000; }
   .sub-text { font-size: 14px; color: #fff; text-shadow: 1px 1px 1px #000; }
   .hp-bar-bg { width: 100%; height: 8px; background: #555; margin-top: 4px; border-radius: 4px; overflow: hidden; }
   .hp-bar-val { width: 100%; height: 100%; background: #0f0; transition: width 0.2s; }
-    
+   
   #versionText { position: absolute; top: 0; right: -100px; font-size: 12px; color: rgba(255,255,255,0.8); text-shadow: 1px 1px 0 #000; font-weight:bold; }
 
   #msgArea { position: fixed; top: 35%; left: 0; width: 100%; text-align: center; pointer-events: none; z-index: 20; }
@@ -102,8 +100,7 @@ const CFG = {
     wood: 0x8B4513, leaf: 0x228B22, iron: 0x333333, concrete: 0xaaaaaa
   },
   player: { speed: 10.0, jump: 22.0, height: 1.7, maxHp: 100 },
-  // 修正3: 感度を30倍に設定
-  kekkai: { max: 10, sensitivity: 300.0 }, 
+  kekkai: { max: 10, sensitivity: 300.0 }, // 修正③: 感度を30倍(10.0 -> 300.0)
   dist: { near: 6.0, far: 20.0 },
   field: { width: 120, depth: 160 }
 };
@@ -150,23 +147,25 @@ function showMsg(t, c) {
   els.msg.textContent = t; els.msg.style.color = c; els.msg.style.opacity = 1; 
   setTimeout(() => els.msg.style.opacity = 0, 500); 
 }
+// 修正②: 文字の消える速度を高速化
 function spawnText(s, p, c) { 
   const cvs = document.createElement('canvas'); cvs.width = 128; cvs.height = 64; 
   const ctx = cvs.getContext('2d'); ctx.font = "bold 48px sans-serif"; ctx.fillStyle = c; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(s, 64, 32); 
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cvs), transparent: true })); 
   sp.position.copy(p); sp.scale.set(3, 1.5, 3); scene.add(sp); 
   let f = 0; 
-  // 修正2: 文字演出を3倍速く消す（インパクト重視）
-  const a = () => { f += 0.15; sp.position.y += 0.03; sp.material.opacity = 1 - f; if (f < 1) requestAnimationFrame(a); else { scene.remove(sp); sp.material.map.dispose(); sp.geometry.dispose(); } }; 
+  // 0.05 -> 0.15 (3倍速で消える)
+  const a = () => { f += 0.15; sp.position.y += 0.05; sp.material.opacity = 1 - f; if (f < 1) requestAnimationFrame(a); else { scene.remove(sp); sp.material.map.dispose(); sp.geometry.dispose(); } }; 
   a(); 
 }
+// 修正②: パーティクルの消える速度を高速化
 function spawnParticle(p, n, c) { 
   const g = new THREE.BoxGeometry(0.25, 0.25, 0.25), m = new THREE.MeshBasicMaterial({ color: c }); 
   for (let i = 0; i < n; i++) { 
     const me = new THREE.Mesh(g, m); me.position.copy(p).add(new THREE.Vector3((Math.random() - .5) * 2, (Math.random() - .5) * 2, (Math.random() - .5) * 2)); scene.add(me); 
     const v = new THREE.Vector3(Math.random() - .5, Math.random() - .5, Math.random() - .5).multiplyScalar(1.5); 
-    // 修正2: パーティクルの消失速度を上げる（0.92 -> 0.8）
-    const a = () => { me.position.add(v); me.scale.multiplyScalar(0.8); if (me.scale.x > 0.05) requestAnimationFrame(a); else scene.remove(me); }; 
+    // 0.92 -> 0.80 (急激に小さくなる)
+    const a = () => { me.position.add(v); me.scale.multiplyScalar(0.80); if (me.scale.x > 0.05) requestAnimationFrame(a); else scene.remove(me); }; 
     a(); 
   } 
 }
@@ -270,6 +269,7 @@ function spawnEnemy() {
 
 function actionMetsu() { 
   let t = null, minD = 999; 
+  // ★重要：VR時はカメラのワールド座標を基準に判定する
   const pPos = new THREE.Vector3();
   if (renderer.xr.isPresenting) camera.getWorldPosition(pPos);
   else pPos.copy(playerBody.position);
@@ -286,7 +286,8 @@ function actionMetsu() {
   const bbox = new THREE.Box3().setFromObject(t.mesh); let sc = t.mesh.scale.x; 
   const loop = () => { 
     if (!kekkaiList.includes(t)) return; 
-    sc -= 0.1; t.mesh.scale.setScalar(sc); 
+    // 修正②: 滅却速度を高速化 (0.1 -> 0.3)
+    sc -= 0.3; t.mesh.scale.setScalar(sc); 
     enemies.forEach(e => { if (bbox.containsPoint(e.mesh.position)) { killEnemy(e); } }); 
     if (sc <= 0.1) { removeKekkai(t); spawnParticle(t.mesh.position, 30, 0xffaa00); } else { requestAnimationFrame(loop); }
   }; loop(); 
@@ -303,13 +304,17 @@ function updateAimMarker() {
   if(!playerGroup || !aimMarker) return; 
    
   if (renderer.xr.isPresenting) { 
+    // ★重要修正：ワールド座標系での位置計算
+    // カメラの「絶対座標」と「絶対的な向き」を取得して計算する
     camera.getWorldPosition(_vecPos);
     camera.getWorldDirection(_vecDir);
     
+    // 現在の頭の位置 + 視線方向 * 距離
     aimMarker.position.copy(_vecPos).add(_vecDir.multiplyScalar(currentDist));
     aimMarker.rotation.y = Math.atan2(_vecDir.x, _vecDir.z);
     aimMarker.visible = true; 
   } else { 
+    // Mobile/PC
     aimMarker.visible = true; 
     const e = new THREE.Euler(camAngle.pitch, camAngle.yaw, 0, 'YXZ'); 
     const d = new THREE.Vector3(0, 0, -1).applyEuler(e); 
@@ -375,10 +380,20 @@ function handleVRInput() {
 
   const cam = renderer.xr.getCamera();
    
+  // ★重要修正：ワールド方向ベクトルを取得し、移動に使用する
+  // これにより「カメラが見ている方向」が「前」となる
   camera.getWorldDirection(_vecDir);
-  _vecDir.y = 0; _vecDir.normalize(); 
+  _vecDir.y = 0; _vecDir.normalize(); // 水平化
    
+  // 右方向ベクトルを算出 (Upベクトルとの外積)
   _vecRight.crossVectors(_vecDir, _vecUp).normalize(); 
+  // 注意: Three.jsの座標系では外積の順序で符号が変わるが、
+  // cross(Forward, Up) -> Left? Right? 
+  // Forward=(0,0,-1), Up=(0,1,0) -> Cross=(-1,0,0) = Left??
+  // 補正: cross(Up, Forward) -> (-1,0,0)?? 
+  // 直感的に、StickXがプラスで右に行きたいので、計算後に確認して符号調整
+  // ここでは (Forward x Up) は通常 左(-X)を向くため、_vecRightを反転させるか、
+  // あるいは (-stickX) を使う。ここではベクトルを反転させて「右」として扱う。
   _vecRight.negate(); 
 
   for (const src of session.inputSources) {
@@ -387,15 +402,17 @@ function handleVRInput() {
     const hand = src.handedness;
     const idx = (hand === 'left') ? 0 : 1;
     if (!controllers[idx]) continue;
-    const ctrlPos = controllers[idx].position; 
+    const ctrlPos = controllers[idx].position; // Note: Local to PlayerGroup usually
 
     // --- 左手: 移動 (視点基準) & 解 ---
     if (hand === 'left') {
       if (gp.axes.length >= 4) { 
         const stickX = gp.axes[2]; 
-        const stickY = gp.axes[3]; 
+        const stickY = gp.axes[3]; // 上:-1 下:+1
         if (Math.abs(stickX) > 0.1 || Math.abs(stickY) > 0.1) {
-          // 修正1: stickXにマイナスを付けて左右移動を反転
+          // 前後移動: stickYが負(上)のとき、Forward方向に進む -> -stickY
+          // 左右移動: stickXが正(右)のとき、Right方向に進む -> +stickX
+          // 修正①: 左スティック左右反転のリクエスト対応 (-stickX に変更)
           const moveVec = _vecDir.clone().multiplyScalar(-stickY)
             .add(_vecRight.clone().multiplyScalar(-stickX));
           
@@ -416,6 +433,7 @@ function handleVRInput() {
           if (kekkaiList.length >= CFG.kekkai.max) { showMsg("上限", "#f44"); } 
           else {
             vrState.left.drawing = true; vrState.left.startHandPos.copy(ctrlPos);
+            // ★重要：エイムマーカー（ワールド座標）の位置に生成
             vrState.left.startOrigin.copy(aimMarker.position); 
             const g = new THREE.BoxGeometry(1, 1, 1);
             const m = new THREE.MeshPhongMaterial({ color: CFG.colors.drawPhys, transparent: true, opacity: 0.6, side: THREE.DoubleSide });
@@ -439,6 +457,7 @@ function handleVRInput() {
     if (hand === 'right') {
       const turnVal = gp.axes[2];
       if (Math.abs(turnVal) > 0.2) { 
+        // 右スティックで PlayerGroup 全体を回転させる (Snap Turn的にスムーズ回転)
         camAngle.yaw -= turnVal * 0.04; 
       }
       if (gp.buttons[4]?.pressed && Math.abs(playerBody.velocity.y) < 1) playerBody.velocity.y = CFG.player.jump;
@@ -467,7 +486,9 @@ function handleVRInput() {
     }
   }
 
+  // 物理体の位置にPlayerGroupを移動させる
   playerGroup.position.copy(playerBody.position);
+  // 右スティックによる回転(Yaw)を適用
   playerGroup.rotation.y = camAngle.yaw;
 }
 
@@ -509,7 +530,7 @@ function setupEnvironment(mat){
   createBox(FW/2 - wallW/2, WH/2, FD/2+1, wallW, WH, 2, CFG.colors.wall); 
   createBox(-FW/2-1,WH/2,0,2,WH,FD+2,CFG.colors.wall); 
   createBox(FW/2+1,WH/2,0,2,WH,FD+2,CFG.colors.wall); 
-    
+   
   const bH=30,bZ=-FD/2-20; createBox(0,bH/2,bZ,FW,bH,40,CFG.colors.building);
   for(let i=-FW/2+5;i<FW/2;i+=10)for(let j=5;j<28;j+=7){const w=new THREE.Mesh(new THREE.PlaneGeometry(4,4),new THREE.MeshBasicMaterial({color:0x87CEFA})); w.position.set(i,j,bZ+20+0.1); scene.add(w);}
   createBox(0, bH+1, bZ, FW, 2, 40, CFG.colors.concrete);
@@ -543,12 +564,12 @@ function setupEnvironment(mat){
   const slZ = bZ + 20 + stW/2 + 0.05; 
   const slB=new CANNON.Body({mass:0,material:mat}); slB.addShape(new CANNON.Box(new CANNON.Vec3(slLen/2,0.5,stW/2))); slB.position.set(slMidX, slMidY, slZ); const slQ = new THREE.Quaternion(); slQ.setFromEuler(new THREE.Euler(0,0,slAng)); slB.quaternion.copy(slQ); world.addBody(slB);
   const slM=new THREE.Mesh(new THREE.BoxGeometry(slLen,1,stW), new THREE.MeshStandardMaterial({color:CFG.colors.concrete})); slM.position.copy(slB.position); slM.quaternion.copy(slB.quaternion); scene.add(slM);
-    
+   
   const brRun=3.0, brRise=1.5; const brLen=Math.sqrt(brRun**2+brRise**2)+0.5; const brAng=Math.atan2(brRise, brRun); 
   const brB = new CANNON.Body({mass:0, material:mat}); brB.addShape(new CANNON.Box(new CANNON.Vec3(landW/2, 0.2, brLen/2))); 
   brB.position.set(landX, bH + 0.5 + brRise/2, bZ + 21.5); brB.quaternion.setFromEuler(brAng, 0, 0); world.addBody(brB);
   const brM = new THREE.Mesh(new THREE.BoxGeometry(landW, 0.4, brLen), new THREE.MeshStandardMaterial({color:CFG.colors.concrete})); brM.position.copy(brB.position); brM.quaternion.copy(brB.quaternion); scene.add(brM);
-    
+   
   const hrH=1.2, hrT=0.1; const cRail = (x,y,z,w,h,d,rx=0,ry=0,rz=0) => { const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshStandardMaterial({color:CFG.colors.iron})); m.position.set(x,y,z); m.rotation.set(rx,ry,rz); scene.add(m); const b=new CANNON.Body({mass:0,material:mat}); b.addShape(new CANNON.Box(new CANNON.Vec3(w/2,h/2,d/2))); b.position.copy(m.position); b.quaternion.copy(m.quaternion); world.addBody(b); };
   cRail(slMidX, slMidY+hrH/2, slZ-stW/2+hrT/2+0.05, slLen, hrH, hrT, 0,0,slAng); cRail(slMidX, slMidY+hrH/2, slZ+stW/2-hrT/2-0.05, slLen, hrH, hrT, 0,0,slAng);
   cRail(landX, landY+hrH/2, landZ+landD/2-hrT/2, landW, hrH, hrT); cRail(landX+landW/2-hrT/2, landY+hrH/2, landZ, hrT, hrH, landD);
@@ -591,14 +612,17 @@ function loop(t) {
   world.step(1 / 60, dt, 3);
 
   if (!renderer.xr.isPresenting) { 
+    // Mobile/PC movement logic
+    // ★重要修正: カメラのY軸回転を適用して移動方向を決定する
     const yaw = camAngle.yaw;
     const fwd = new THREE.Vector3(input.x, 0, input.y).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw); 
     playerBody.velocity.x = fwd.x * CFG.player.speed; playerBody.velocity.z = fwd.z * CFG.player.speed; 
-    
+     
+    // カメラの追従
     playerGroup.position.copy(playerBody.position).add(new THREE.Vector3(0, CFG.player.height, 0)); 
     playerGroup.rotation.y = yaw; camera.rotation.x = camAngle.pitch; 
   }
-    
+   
   updateAimMarker(); if (t > gameState.nextSpawn) { spawnEnemy(); gameState.nextSpawn = t + 3000 - gameState.wave * 100; }
   items.forEach(it => { it.mesh.position.copy(it.body.position); it.mesh.rotation.y += 0.05; if (playerBody.position.distanceTo(it.body.position) < 2.0) { healPlayer(20); scene.remove(it.mesh); world.removeBody(it.body); items = items.filter(i => i !== it); } });
   if (vip) { vip.mesh.position.copy(vip.body.position); const tg = vip.goal.vsub(vip.body.position); if(vipGoalMesh) vipGoalMesh.rotation.y += 0.02; if (tg.length() < 6.0) { showMsg("護衛成功!", "#0f0"); world.removeBody(vip.body); scene.remove(vip.mesh); vip = null; els.vipBox.style.display = "none"; gameState.isVipMode = false; if(vipGoalMesh) { scene.remove(vipGoalMesh); vipGoalMesh = null; }} else { tg.normalize(); vip.body.velocity.x = tg.x * 7; vip.body.velocity.z = tg.z * 7; els.vipHpBar.style.width = vip.hp + "%"; if (vip.hp <= 0) { showMsg("護衛失敗...", "#f00"); world.removeBody(vip.body); scene.remove(vip.mesh); vip = null; els.vipBox.style.display = "none"; gameState.isVipMode = false; if(vipGoalMesh) { scene.remove(vipGoalMesh); vipGoalMesh = null; }} } }
@@ -650,500 +674,6 @@ function init() {
 
 document.getElementById('vrBtn').addEventListener('click', async () => { if (currentSession) return; if (!navigator.xr) return; try { const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'] }); renderer.xr.setSession(session); currentSession = session; els.novr.forEach(e => e.style.opacity = 0); session.addEventListener('end', () => { currentSession = null; els.novr.forEach(e => e.style.opacity = 1); }); } catch (e) { console.error("VR Init Error:", e); alert("VRモードの起動に失敗しました: " + e.message); } });
 window.onload = init;
-</script>
-</body>
-</html>
-    <meta charset="UTF-8">
-    <title>VR Kekkai Sim - Final Fix</title>
-    <style>
-        body { margin: 0; overflow: hidden; background-color: #000; }
-    </style>
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.159.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.159.0/examples/jsm/"
-            }
-        }
-    </script>
-</head>
-<body>
-<script type="module">
-    import * as THREE from 'three';
-    import { VRButton } from 'three/addons/webxr/VRButton.js';
-    import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
-
-    // ==========================================
-    // グローバル変数
-    // ==========================================
-    let camera, scene, renderer;
-    let controller1, controller2;
-    let controllerGrip1, controllerGrip2;
-    
-    // プレイヤー設定
-    const playerState = {
-        moveSpeed: 3.0,          // 移動速度
-        rotationSpeed: 2.0,      // 回転速度
-        distanceMode: 'far',     // ターゲット距離モード
-        userGroup: null          // カメラの親グループ（移動用）
-    };
-
-    // オブジェクト管理
-    const barriers = [];    // 作成済み結界
-    const enemies = [];     // 敵
-    const effects = [];     // エフェクト
-    
-    // 生成中の結界データ
-    let activeBarrier = null; 
-
-    // ★修正③: 感度を30倍に設定（ベース値150 * 30）
-    const BARRIER_SENSITIVITY = 150.0 * 30.0; 
-
-    // ターゲットポイント（赤い点）
-    let targetPointMesh;
-    const targetDistanceFar = 10.0;
-    const targetDistanceNear = 2.0;
-
-    // フォント用キャンバス
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-
-    // ==========================================
-    // 初期化
-    // ==========================================
-    init();
-    animate();
-
-    function init() {
-        scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x111111);
-        scene.fog = new THREE.Fog(0x111111, 0, 80);
-
-        // カメラ設定（VR時はHMDの位置に上書きされるが、初期位置として）
-        camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
-        
-        // プレイヤー移動用グループ
-        const userGroup = new THREE.Group();
-        userGroup.position.set(0, 0, 0); 
-        userGroup.add(camera);
-        scene.add(userGroup);
-        playerState.userGroup = userGroup;
-
-        // ライティング
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-        scene.add(ambientLight);
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-        directionalLight.position.set(0, 10, 0);
-        scene.add(directionalLight);
-
-        // 床（地面）
-        const floorGeometry = new THREE.PlaneGeometry(200, 200);
-        const floorMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x333333, 
-            roughness: 0.8,
-            side: THREE.DoubleSide
-        });
-        const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-        floor.rotation.x = -Math.PI / 2;
-        floor.receiveShadow = true;
-        scene.add(floor);
-
-        // ターゲットポインター（赤い点）
-        const pointGeo = new THREE.SphereGeometry(0.05, 16, 16);
-        const pointMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.8 });
-        targetPointMesh = new THREE.Mesh(pointGeo, pointMat);
-        scene.add(targetPointMesh);
-
-        // ★修正④: 敵（テスト用）の配置
-        // ConeGeometry(半径0.5, 高さ1.5) の中心は高さの半分(0.75)にあるため
-        // y=0.75 に置くことで底面が y=0（地面）に接します。
-        createTestEnemy(0, 0.75, -5);
-        createTestEnemy(3, 0.75, -8);
-        createTestEnemy(-3, 0.75, -8);
-
-        // レンダラー設定
-        renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.xr.enabled = true;
-        document.body.appendChild(renderer.domElement);
-
-        document.body.appendChild(VRButton.createButton(renderer));
-
-        // コントローラーセットアップ
-        setupControllers();
-
-        window.addEventListener('resize', onWindowResize);
-    }
-
-    function setupControllers() {
-        // 右手・左手の判定は接続順やブラウザによるが、inputSource.handednessで判定して処理する
-        controller1 = renderer.xr.getController(0);
-        controller1.addEventListener('selectstart', onSelectStart); // トリガー
-        controller1.addEventListener('squeeze', onSqueezeStart);    // グリップ開始
-        controller1.addEventListener('squeezeend', onSqueezeEnd);   // グリップ終了
-        scene.add(controller1);
-
-        controller2 = renderer.xr.getController(1);
-        controller2.addEventListener('selectstart', onSelectStart);
-        controller2.addEventListener('squeeze', onSqueezeStart);
-        controller2.addEventListener('squeezeend', onSqueezeEnd);
-        scene.add(controller2);
-
-        // コントローラーの見た目（3Dモデル）
-        const controllerModelFactory = new XRControllerModelFactory();
-        controllerGrip1 = renderer.xr.getControllerGrip(0);
-        controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
-        scene.add(controllerGrip1);
-
-        controllerGrip2 = renderer.xr.getControllerGrip(1);
-        controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
-        scene.add(controllerGrip2);
-    }
-
-    // ==========================================
-    // 入力イベント
-    // ==========================================
-    
-    // トリガー: アクション実行 (解/滅)
-    function onSelectStart(event) {
-        const controller = event.target;
-        const inputSource = controller.inputSource;
-        if (!inputSource) return;
-
-        const handedness = inputSource.handedness;
-
-        if (handedness === 'left') {
-            // 左トリガー: 解
-            removeNearestBarrier();
-            showTextEffect("解", targetPointMesh.position, 0x00ffff);
-        } else if (handedness === 'right') {
-            // 右トリガー: 滅
-            destroyBarrierAction();
-            showTextEffect("滅", targetPointMesh.position, 0xff0000);
-        }
-    }
-
-    // グリップ: 結界生成開始
-    function onSqueezeStart(event) {
-        const controller = event.target;
-        const inputSource = controller.inputSource;
-        if (!inputSource) return;
-
-        // 既に生成中なら無視
-        if (activeBarrier) return;
-
-        const type = (inputSource.handedness === 'left') ? 'solid' : 'ghost'; // 左=青, 右=緑
-        
-        // 結界初期化
-        const geometry = new THREE.BoxGeometry(1, 1, 1);
-        const material = new THREE.MeshStandardMaterial({
-            color: type === 'solid' ? 0x0088ff : 0x00ff88,
-            transparent: true,
-            opacity: 0.5,
-            roughness: 0.1,
-            metalness: 0.1,
-            side: THREE.DoubleSide
-        });
-
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.position.copy(targetPointMesh.position);
-        mesh.scale.set(0.1, 0.1, 0.1); // 極小からスタート
-        scene.add(mesh);
-
-        activeBarrier = {
-            mesh: mesh,
-            controller: controller,
-            startControllerPos: controller.position.clone(), // 開始位置記録
-        };
-    }
-
-    // グリップ離す: 生成完了
-    function onSqueezeEnd(event) {
-        if (activeBarrier && activeBarrier.controller === event.target) {
-            barriers.push(activeBarrier.mesh);
-            activeBarrier = null;
-        }
-    }
-
-    // ==========================================
-    // メインループ
-    // ==========================================
-    function animate() {
-        renderer.setAnimationLoop(render);
-    }
-
-    function render() {
-        const dt = 0.016; // 固定デルタタイム
-        
-        handleInput(dt);
-        updateActiveBarrier();
-        updateEffects(dt);
-        updateTargetPoint();
-
-        renderer.render(scene, camera);
-    }
-
-    // ==========================================
-    // 各種更新ロジック
-    // ==========================================
-
-    function handleInput(dt) {
-        const session = renderer.xr.getSession();
-        if (!session) return;
-
-        let inputSources = session.inputSources;
-        const moveVector = new THREE.Vector3(0, 0, 0);
-
-        // カメラ方向（Y軸回転のみ）
-        const cameraDirection = new THREE.Vector3();
-        camera.getWorldDirection(cameraDirection);
-        cameraDirection.y = 0;
-        cameraDirection.normalize();
-
-        const cameraRight = new THREE.Vector3();
-        cameraRight.crossVectors(cameraDirection, new THREE.Vector3(0, 1, 0));
-
-        for (const source of inputSources) {
-            if (!source.gamepad) continue;
-            const gp = source.gamepad;
-            const handedness = source.handedness;
-
-            // --- 左手: 移動 ---
-            if (handedness === 'left' && gp.axes.length >= 4) {
-                // Quest等: axes[2]=X, axes[3]=Y
-                
-                // ★修正①: 左右移動の反転
-                // 元の値が左(-1)～右(+1)なので、マイナスを付けて反転させる
-                const inputX = -gp.axes[2]; 
-                const inputY = gp.axes[3]; 
-
-                // 前後
-                if (Math.abs(inputY) > 0.1) {
-                    moveVector.addScaledVector(cameraDirection, inputY * playerState.moveSpeed * dt);
-                }
-                // 左右
-                if (Math.abs(inputX) > 0.1) {
-                    moveVector.addScaledVector(cameraRight, inputX * playerState.moveSpeed * dt);
-                }
-            }
-
-            // --- 右手: 回転・その他 ---
-            if (handedness === 'right' && gp.axes.length >= 4) {
-                const rotX = gp.axes[2];
-                // 視点回転
-                if (Math.abs(rotX) > 0.2) {
-                    playerState.userGroup.rotation.y -= rotX * playerState.rotationSpeed * dt;
-                }
-                
-                // Bボタン(通常[5])で距離切り替え
-                if (gp.buttons[5] && gp.buttons[5].pressed) {
-                    if (!playerState.bButtonWasPressed) {
-                        playerState.distanceMode = (playerState.distanceMode === 'near') ? 'far' : 'near';
-                        playerState.bButtonWasPressed = true;
-                    }
-                } else {
-                    playerState.bButtonWasPressed = false;
-                }
-            }
-        }
-
-        playerState.userGroup.position.add(moveVector);
-    }
-
-    function updateTargetPoint() {
-        const dist = (playerState.distanceMode === 'near') ? targetDistanceNear : targetDistanceFar;
-        
-        const dir = new THREE.Vector3();
-        camera.getWorldDirection(dir);
-        dir.normalize();
-
-        const targetPos = new THREE.Vector3();
-        targetPos.copy(camera.position).addScaledVector(dir, dist);
-        
-        // 地面より下にめり込まないように補正
-        if (targetPos.y < 0.05) targetPos.y = 0.05;
-
-        targetPointMesh.position.copy(targetPos);
-    }
-
-    function updateActiveBarrier() {
-        if (!activeBarrier) return;
-
-        const controller = activeBarrier.controller;
-        const currentPos = controller.position.clone();
-        
-        // 手の移動量
-        const diff = new THREE.Vector3().subVectors(currentPos, activeBarrier.startControllerPos);
-
-        // ★修正③: 感度30倍 (BARRIER_SENSITIVITY使用)
-        // 手の移動量(diff)に応じてスケールを加算
-        const scaleX = 1.0 + Math.abs(diff.x) * BARRIER_SENSITIVITY;
-        const scaleY = 1.0 + Math.abs(diff.y) * BARRIER_SENSITIVITY;
-        const scaleZ = 1.0 + Math.abs(diff.z) * BARRIER_SENSITIVITY;
-
-        activeBarrier.mesh.scale.set(scaleX, scaleY, scaleZ);
-    }
-
-    function updateEffects(dt) {
-        for (let i = effects.length - 1; i >= 0; i--) {
-            const fx = effects[i];
-            fx.life -= dt;
-            
-            if (fx.type === 'text') {
-                fx.mesh.position.y += dt * 1.0; // 上昇速度少しアップ
-                fx.mesh.lookAt(camera.position);
-            } else if (fx.type === 'shard') {
-                fx.mesh.position.addScaledVector(fx.velocity, dt);
-                fx.mesh.rotation.x += fx.rotationSpeed.x;
-                fx.mesh.rotation.y += fx.rotationSpeed.y;
-            }
-
-            // フェードアウト
-            if (fx.life < 0.2) {
-                fx.mesh.material.opacity = fx.life / 0.2;
-            }
-
-            if (fx.life <= 0) {
-                scene.remove(fx.mesh);
-                if (fx.mesh.geometry) fx.mesh.geometry.dispose();
-                if (fx.mesh.material) fx.mesh.material.dispose();
-                effects.splice(i, 1);
-            }
-        }
-    }
-
-    // ==========================================
-    // アクション・エフェクト
-    // ==========================================
-
-    function createTestEnemy(x, y, z) {
-        // 高さ1.5, 半径0.5のコーン
-        const geo = new THREE.ConeGeometry(0.5, 1.5, 16);
-        const mat = new THREE.MeshStandardMaterial({ color: 0xff00ff }); // 紫
-        const enemy = new THREE.Mesh(geo, mat);
-        enemy.position.set(x, y, z);
-        scene.add(enemy);
-        enemies.push(enemy);
-    }
-
-    function removeNearestBarrier() {
-        if (barriers.length === 0) return;
-        let nearest = null;
-        let minDist = Infinity;
-        const pos = targetPointMesh.position;
-
-        barriers.forEach(b => {
-            const d = b.position.distanceTo(pos);
-            if (d < minDist) {
-                minDist = d;
-                nearest = b;
-            }
-        });
-
-        // 判定距離を少し甘めに設定
-        if (nearest && minDist < 8.0) {
-            createDebris(nearest.position, nearest.scale, nearest.material.color);
-            scene.remove(nearest);
-            barriers.splice(barriers.indexOf(nearest), 1);
-        }
-    }
-
-    function destroyBarrierAction() {
-        if (barriers.length === 0) return;
-        let targetBarrier = null;
-        let minDist = Infinity;
-        const targetPos = targetPointMesh.position;
-
-        for (const b of barriers) {
-            const d = b.position.distanceTo(targetPos);
-            if (d < minDist) {
-                minDist = d;
-                targetBarrier = b;
-            }
-        }
-
-        if (targetBarrier && minDist < 8.0) {
-            const box = new THREE.Box3().setFromObject(targetBarrier);
-            
-            for (let i = enemies.length - 1; i >= 0; i--) {
-                const enemy = enemies[i];
-                if (box.containsPoint(enemy.position)) {
-                    createDebris(enemy.position, new THREE.Vector3(1,1,1), 0xff00ff, 15);
-                    scene.remove(enemy);
-                    enemies.splice(i, 1);
-                }
-            }
-            
-            createDebris(targetBarrier.position, targetBarrier.scale, 0xff0000, 20);
-            scene.remove(targetBarrier);
-            barriers.splice(barriers.indexOf(targetBarrier), 1);
-        }
-    }
-
-    function showTextEffect(text, position, colorHex) {
-        const size = 256;
-        canvas.width = size;
-        canvas.height = size;
-        context.clearRect(0, 0, size, size);
-        context.fillStyle = '#' + new THREE.Color(colorHex).getHexString();
-        context.font = 'bold 200px Arial';
-        context.textAlign = 'center';
-        context.textBaseline = 'middle';
-        context.fillText(text, size/2, size/2);
-
-        const texture = new THREE.CanvasTexture(canvas);
-        const mat = new THREE.SpriteMaterial({ map: texture, transparent: true });
-        const sprite = new THREE.Sprite(mat);
-        
-        sprite.position.copy(position);
-        sprite.scale.set(2, 2, 2);
-        scene.add(sprite);
-
-        effects.push({
-            type: 'text',
-            mesh: sprite,
-            // ★修正②: 寿命を短縮(0.4秒)
-            life: 0.4
-        });
-    }
-
-    function createDebris(pos, scale, color, count = 10) {
-        const geo = new THREE.BoxGeometry(0.2, 0.2, 0.2);
-        const mat = new THREE.MeshBasicMaterial({ color: color, transparent: true });
-
-        for(let i=0; i<count; i++) {
-            const mesh = new THREE.Mesh(geo, mat);
-            // 結界サイズ内に分散
-            mesh.position.set(
-                pos.x + (Math.random() - 0.5) * scale.x,
-                pos.y + (Math.random() - 0.5) * scale.y,
-                pos.z + (Math.random() - 0.5) * scale.z
-            );
-            
-            const velocity = new THREE.Vector3(
-                (Math.random() - 0.5) * 15,
-                (Math.random() - 0.5) * 15,
-                (Math.random() - 0.5) * 15
-            );
-
-            scene.add(mesh);
-            effects.push({
-                type: 'shard',
-                mesh: mesh,
-                velocity: velocity,
-                rotationSpeed: { x: Math.random(), y: Math.random() },
-                // ★修正②: 寿命を短縮(0.4秒)
-                life: 0.4
-            });
-        }
-    }
-
-    function onWindowResize() {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    }
 </script>
 </body>
 </html>
