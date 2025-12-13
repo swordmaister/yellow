@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<title>真・結界師VR — v8.4 Final Movement Fix</title>
+<title>真・結界師VR — v8.5 Final Fix</title>
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#87CEEB">
 <style>
@@ -312,14 +312,13 @@ function actionKai() {
 
 function updateAimMarker() { 
   if(!aimMarker) return; 
-  // --- FIX: Force Matrix Update to get LATEST player position ---
+  // FIX: Force Matrix Update to get LATEST player position
   playerGroup.updateMatrixWorld(true);
 
   const origin = new THREE.Vector3();
   const direction = new THREE.Vector3();
   const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
   
-  // Now getWorldPosition will return the correct, updated position
   cam.getWorldPosition(origin); 
   cam.getWorldDirection(direction);
   
@@ -600,42 +599,32 @@ function loop(t) {
   
   if (renderer.xr.isPresenting) handleVRInput();
 
-  if(!renderer.xr.isPresenting) {
-      camera.rotation.x = camAngle.pitch;
-      playerGroup.rotation.y = camAngle.yaw;
-  }
+  // --- FIX 1: APPLY ROTATION ALWAYS (Both VR & Non-VR) ---
+  playerGroup.rotation.y = camAngle.yaw;
+  if(!renderer.xr.isPresenting) camera.rotation.x = camAngle.pitch;
 
-  // --- NEW: MOVEMENT LOGIC (Rotate Input Vector by Camera Yaw) ---
+  // --- FIX 2: ROBUST MOVEMENT CALCULATION ---
+  // Get camera's World Direction
+  const moveDir = new THREE.Vector3();
   const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
-  const camQuat = new THREE.Quaternion();
-  cam.getWorldQuaternion(camQuat);
-  const euler = new THREE.Euler(0, 0, 0, 'YXZ');
-  euler.setFromQuaternion(camQuat);
-  const yaw = euler.y;
-
-  // Input Vector (X: Right, Y: -Forward)
-  // Input Y is -1 for Forward, so we map input.y to -Z
-  const moveVec = new THREE.Vector3(input.x, 0, input.y); 
-  moveVec.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw); // Rotate by Camera Yaw
-
+  cam.getWorldDirection(moveDir);
+  moveDir.y = 0; moveDir.normalize();
+  
+  // Calculate Right Vector
+  const moveRight = new THREE.Vector3(-moveDir.z, 0, moveDir.x);
+  
+  // Apply Input (Standard Gamepad: -Y is Forward)
+  const moveVec = moveDir.clone().multiplyScalar(-input.y).add(moveRight.clone().multiplyScalar(input.x));
+  
   playerBody.velocity.x = moveVec.x * CFG.player.speed;
   playerBody.velocity.z = moveVec.z * CFG.player.speed;
   
-  // Sync Body
+  // Sync Visuals
   playerGroup.position.copy(playerBody.position).add(new THREE.Vector3(0, CFG.player.height, 0));
   
-  // --- NEW: AIM MARKER LOGIC (Force Update Matrix) ---
-  if(aimMarker) {
-    playerGroup.updateMatrixWorld(true); // <--- CRITICAL FIX for Aim Lag
-    
-    const origin = new THREE.Vector3();
-    const direction = new THREE.Vector3();
-    cam.getWorldPosition(origin);
-    cam.getWorldDirection(direction);
-    
-    aimMarker.position.copy(origin).add(direction.multiplyScalar(currentDist));
-    aimMarker.visible = true;
-  }
+  // --- FIX 3: FORCE MATRIX UPDATE FOR AIM ---
+  playerGroup.updateMatrixWorld(true);
+  updateAimMarker();
 
   if (t > gameState.nextSpawn) { spawnEnemy(); gameState.nextSpawn = t + 3000 - gameState.wave * 100; }
   
