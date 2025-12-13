@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<title>真・結界師VR — v7.0 Head-Aim & Physics</title>
+<title>真・結界師VR — v8.0 Metsu & Movement Fix</title>
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#87CEEB">
 <style>
@@ -148,7 +148,8 @@ const els = {
 // --- UTILITY FUNCTIONS ---
 function showMsg(t, c) { 
   els.msg.textContent = t; els.msg.style.color = c; els.msg.style.opacity = 1; 
-  setTimeout(() => els.msg.style.opacity = 0, 300); 
+  // Fast fade out
+  setTimeout(() => els.msg.style.opacity = 0, 800); 
 }
 
 function spawnText(s, p, c) { 
@@ -157,7 +158,8 @@ function spawnText(s, p, c) {
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cvs), transparent: true })); 
   sp.position.copy(p); sp.scale.set(3, 1.5, 3); scene.add(sp); 
   let f = 0; 
-  const a = () => { f += 0.15; sp.position.y += 0.05; sp.material.opacity = 1 - f; if (f < 1) requestAnimationFrame(a); else { scene.remove(sp); sp.material.map.dispose(); } }; 
+  // Faster animation for text removal
+  const a = () => { f += 0.2; sp.position.y += 0.05; sp.material.opacity = 1 - f; if (f < 1) requestAnimationFrame(a); else { scene.remove(sp); sp.material.map.dispose(); } }; 
   a(); 
 }
 
@@ -213,7 +215,7 @@ function createKekkai(p, s, r, isGhost=false) {
     // Solid Box (Physical)
     b.addShape(new CANNON.Box(new CANNON.Vec3(s.x/2, s.y/2, s.z/2))); 
   } else { 
-    // Hollow Box (Ghost) - Correctly Spaced for Player Entry
+    // Hollow Box (Ghost) - Traps enemy inside
     const t = 0.2; // Thin walls
     const x = s.x/2, y = s.y/2, z = s.z/2; 
     // Left/Right
@@ -234,7 +236,7 @@ function createKekkai(p, s, r, isGhost=false) {
   mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 }))); 
   mesh.position.copy(p); mesh.rotation.y = r; scene.add(mesh); 
   
-  kekkaiList.push({ body: b, mesh: mesh, isShrinking: false, shrinkProgress: 1.0, isGhost: isGhost }); 
+  kekkaiList.push({ body: b, mesh: mesh, isShrinking: false, shrinkProgress: 1.0, isGhost: isGhost, maxScale: s.clone() }); 
   spawnText("結", p, isGhost ? "#0ff" : "#ff0"); updateHUD(); 
 }
 
@@ -249,9 +251,17 @@ function removeEnemy(e) { if (!enemies.includes(e)) return; enemies = enemies.fi
 
 function killEnemy(e) { 
   if (!enemies.includes(e)) return; 
-  if (e.isGiant && e.hp > 0) { e.hp--; spawnParticle(e.mesh.position, 10, 0xffaa00); const push = playerBody.position.vsub(e.body.position); push.normalize(); e.body.applyImpulse(push.scale(-500), e.body.position); if (e.hp > 0) return; } 
-  removeEnemy(e); spawnParticle(e.mesh.position, 25, 0xff0000); if (Math.random() < 0.3) spawnItem(e.body.position); 
-  gameState.kills++; gameState.req--; if (gameState.req <= 0) { gameState.wave++; gameState.req = gameState.wave * 2 + 4; showMsg(`WAVE ${gameState.wave}`, "#fe0"); if (gameState.wave % 3 === 0) startVipMission(); } updateHUD(); 
+  // "Metsu" instant kill effect logic is handled in the loop, this is the final cleanup
+  removeEnemy(e); 
+  spawnParticle(e.mesh.position, 25, 0xff0000); 
+  if (Math.random() < 0.3) spawnItem(e.body.position); 
+  gameState.kills++; gameState.req--; 
+  if (gameState.req <= 0) { 
+    gameState.wave++; gameState.req = gameState.wave * 2 + 4; 
+    showMsg(`WAVE ${gameState.wave}`, "#fe0"); 
+    if (gameState.wave % 3 === 0) startVipMission(); 
+  } 
+  updateHUD(); 
 }
 
 function spawnGiant(x, y, z) { 
@@ -287,11 +297,15 @@ function actionMetsu() {
   kekkaiList.forEach(k => { 
     if(k.isShrinking) return;
     const d = aimPos.distanceTo(k.mesh.position); 
+    // Allow slightly larger selection radius
     if (d < minD) { minD = d; t = k; } 
   }); 
-  if (!t || minD > 10.0) { showMsg("対象なし", "#888"); return; } 
+  if (!t || minD > 15.0) { showMsg("対象なし", "#888"); return; } 
   showMsg("滅！", "#f24"); spawnText("滅", t.mesh.position, "#f24"); 
-  t.isShrinking = true; t.mesh.material.color.setHex(0xff0044);
+  
+  t.isShrinking = true; 
+  t.mesh.material.color.setHex(0xff0044);
+  // Remove physics body so it doesn't push enemies away during crush, just traps them logically
   if (t.body) { world.removeBody(t.body); t.body = null; }
 }
 
@@ -305,7 +319,6 @@ function actionKai() {
   } else { showMsg("結界なし", "#888"); } 
 }
 
-// Fixed: Always use Head (Camera) direction for Aiming
 function updateAimMarker() { 
   if(!aimMarker) return; 
   let origin = new THREE.Vector3();
@@ -313,8 +326,7 @@ function updateAimMarker() {
   const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
   origin.copy(cam.position);
   cam.getWorldDirection(direction);
-  // If Non-VR, offset origin to emulate head height if group is at feet
-  if (!renderer.xr.isPresenting) origin.copy(playerGroup.position).add(new THREE.Vector3(0, CFG.player.height*0.8, 0));
+  // Red dot follows player gaze exactly
   aimMarker.position.copy(origin).add(direction.multiplyScalar(currentDist));
   aimMarker.visible = true;
 }
@@ -406,7 +418,7 @@ function setupEnvironment(mat){
 }
 
 // --------------------------------------------------
-// 5. MOBILE INPUTS (Phys: Collision during draw / Ghost: Visual only)
+// 5. MOBILE INPUTS
 // --------------------------------------------------
 function createActiveMobile() { 
   const p = aimMarker.position.clone(), r = camAngle.yaw; 
@@ -443,9 +455,8 @@ function updateActiveMobile(k, dx, dy) {
 }
 
 function finalizeMobile(k) { 
-  // Finalize: Just change visual color, body persists
   k.mesh.material.color.setHex(CFG.colors.kekkai);
-  kekkaiList.push({ body: k.body, mesh: k.mesh, isShrinking: false, shrinkProgress: 1.0, isGhost: false });
+  kekkaiList.push({ body: k.body, mesh: k.mesh, isShrinking: false, shrinkProgress: 1.0, isGhost: false, maxScale: k.currentS });
   spawnText("結", k.mesh.position, "#ff0"); updateHUD();
 }
 
@@ -466,11 +477,9 @@ function setupMobileInputs(){
   
   els.btnDraw.addEventListener('touchstart',e=>{ e.preventDefault(); if(drawId!==null)return; if(kekkaiList.length>=CFG.kekkai.max){showMsg("上限到達","#f44");return;} const t=e.changedTouches[0]; drawId=t.identifier; els.btnDraw.classList.add('drawing'); 
     if(isPhysMode) { 
-      // Phys: Create real body immediately
       activePhysKekkai = createActiveMobile(); 
       activePhysKekkai.startX=t.clientX; activePhysKekkai.startY=t.clientY; 
     } else { 
-      // Ghost: Visual only during draw
       drawState.active=true; drawState.startX=t.clientX; drawState.startY=t.clientY; 
       const gg=new THREE.BoxGeometry(1,1,1),gm=new THREE.MeshPhongMaterial({color:CFG.colors.drawGhost,transparent:true,opacity:0.5, side: THREE.DoubleSide}); 
       drawState.ghost=new THREE.Mesh(gg,gm); 
@@ -512,7 +521,11 @@ function setupVRControllers() { const modelFactory = new XRControllerModelFactor
 function setupVRHud() { const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 128; vrHudCtx = canvas.getContext('2d'); const tex = new THREE.CanvasTexture(canvas); vrHudMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.25), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.9, depthTest: false })); vrHudMesh.position.set(0, -0.4, -1.5); vrHudMesh.renderOrder = 9999; camera.add(vrHudMesh); }
 function handleVRInput() { if (!renderer.xr.isPresenting) return; const session = renderer.xr.getSession(); if (!session) return; for (const src of session.inputSources) { if (!src.gamepad) continue; const gp = src.gamepad; const hand = src.handedness; const idx = (hand === 'left') ? 0 : 1; if(!controllers[idx]) continue; const ctrlPos = controllers[idx].position;
     if (hand === 'left') { 
-      if (gp.axes.length >= 4) { input.x = gp.axes[2]; input.y = gp.axes[3]; } 
+      // Movement Mapping for Meta Quest (Usually Axes 2,3 for Thumbstick)
+      if (gp.axes.length >= 4) { 
+        input.x = gp.axes[2]; 
+        input.y = gp.axes[3]; 
+      } 
       if (gp.buttons[3]?.pressed && Math.abs(playerBody.velocity.y) < 1) playerBody.velocity.y = CFG.player.jump; 
       if (gp.buttons[0]?.pressed && !vrState.left.triggerHeld) { actionKai(); vrState.left.triggerHeld = true; } 
       if (!gp.buttons[0]?.pressed) vrState.left.triggerHeld = false; 
@@ -544,7 +557,7 @@ function handleVRInput() { if (!renderer.xr.isPresenting) return; const session 
         if (vrState.left.drawing) { 
           if (vrState.left.mesh) { 
              vrState.left.mesh.material.color.setHex(CFG.colors.kekkai);
-             kekkaiList.push({ body: vrState.left.physBody, mesh: vrState.left.mesh, isShrinking: false, shrinkProgress: 1.0, isGhost: false });
+             kekkaiList.push({ body: vrState.left.physBody, mesh: vrState.left.mesh, isShrinking: false, shrinkProgress: 1.0, isGhost: false, maxScale: vrState.left.mesh.scale.clone() });
              spawnText("結", vrState.left.mesh.position, "#ff0"); updateHUD();
              vrState.left.mesh = null; vrState.left.physBody = null;
           } 
@@ -598,6 +611,7 @@ function loop(t) {
   camDir.y = 0; camDir.normalize();
   const camRight = new THREE.Vector3(-camDir.z, 0, camDir.x);
   
+  // Left Stick Movement: Front/Back + Crab Walk
   const moveVec = camDir.clone().multiplyScalar(-input.y).add(camRight.clone().multiplyScalar(input.x));
   
   playerBody.velocity.x = moveVec.x * CFG.player.speed;
@@ -610,21 +624,29 @@ function loop(t) {
   updateAimMarker(); 
   if (t > gameState.nextSpawn) { spawnEnemy(); gameState.nextSpawn = t + 3000 - gameState.wave * 100; }
   
+  // Metsu Logic (Shrinking & Killing)
   kekkaiList.forEach(k => {
       if(k.isShrinking) {
-          k.shrinkProgress -= dt * 2.0; 
+          // Faster Shrink for "Instant Kill" feel
+          k.shrinkProgress -= dt * 4.0; 
+          
           if(k.shrinkProgress <= 0) {
               removeKekkai(k);
               spawnParticle(k.mesh.position, 20, 0xff00ff);
           } else {
               k.mesh.scale.setScalar(k.shrinkProgress);
+              
+              // KILL LOGIC: Check who is inside the shrinking zone
+              const currentRadius = (k.maxScale ? Math.max(k.maxScale.x, k.maxScale.z) : 1.0) * k.shrinkProgress * 0.5;
               const center = k.mesh.position;
+              
               enemies.forEach(e => {
                   const dist = center.distanceTo(e.body.position);
-                  if(dist < 5.0) { 
-                      const pull = center.clone().sub(e.body.position).normalize();
-                      e.body.applyForce(pull.multiplyScalar(200), e.body.position); 
-                      if(dist < 1.5 && Math.random() < 0.1) killEnemy(e); 
+                  // If enemy is roughly inside the current barrier size
+                  if(dist < currentRadius + 1.0) { 
+                      // ONE HIT KILL (Set HP 0 and Kill)
+                      e.hp = 0;
+                      killEnemy(e);
                   }
               });
           }
