@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<title>真・結界師VR — World Space Fix v5.2</title>
+<title>真・結界師VR — World Space Fix v5.3</title>
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#87CEEB">
 <style>
@@ -89,7 +89,7 @@ import * as CANNON from 'cannon-es';
 // 1. CONFIG
 // --------------------------------------------------
 const CFG = {
-  VERSION: "v5.2",
+  VERSION: "v5.3",
   colors: {
     sky: 0x87CEEB, ground: 0xC2B280, 
     kekkai: 0xffff00, ghost: 0x00ffff, 
@@ -100,7 +100,7 @@ const CFG = {
     wood: 0x8B4513, leaf: 0x228B22, iron: 0x333333, concrete: 0xaaaaaa
   },
   player: { speed: 10.0, jump: 22.0, height: 1.7, maxHp: 100 },
-  kekkai: { max: 10, sensitivity: 300.0 }, // 修正③: 感度を30倍(10.0 -> 300.0)
+  kekkai: { max: 10, sensitivity: 300.0 }, // 感度30倍維持
   dist: { near: 6.0, far: 20.0 },
   field: { width: 120, depth: 160 }
 };
@@ -124,11 +124,11 @@ const _vecUp = new THREE.Vector3(0, 1, 0);
 
 let vrState = {
   left: { 
-    drawing: false, startHandPos: new THREE.Vector3(), startOrigin: new THREE.Vector3(),
+    drawing: false, startHandPos: new THREE.Vector3(), startOrigin: new THREE.Vector3(), initialScale: new THREE.Vector3(),
     mesh: null, body: null, triggerHeld: false 
   },
   right: { 
-    drawing: false, startHandPos: new THREE.Vector3(), startOrigin: new THREE.Vector3(),
+    drawing: false, startHandPos: new THREE.Vector3(), startOrigin: new THREE.Vector3(), initialScale: new THREE.Vector3(),
     mesh: null, triggerHeld: false, bBtnHeld: false, snapTurn: false 
   }
 };
@@ -147,25 +147,25 @@ function showMsg(t, c) {
   els.msg.textContent = t; els.msg.style.color = c; els.msg.style.opacity = 1; 
   setTimeout(() => els.msg.style.opacity = 0, 500); 
 }
-// 修正②: 文字の消える速度を高速化
+// 修正ポイント①: 文字消去を超高速化
 function spawnText(s, p, c) { 
   const cvs = document.createElement('canvas'); cvs.width = 128; cvs.height = 64; 
   const ctx = cvs.getContext('2d'); ctx.font = "bold 48px sans-serif"; ctx.fillStyle = c; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(s, 64, 32); 
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cvs), transparent: true })); 
   sp.position.copy(p); sp.scale.set(3, 1.5, 3); scene.add(sp); 
   let f = 0; 
-  // 0.05 -> 0.15 (3倍速で消える)
-  const a = () => { f += 0.15; sp.position.y += 0.05; sp.material.opacity = 1 - f; if (f < 1) requestAnimationFrame(a); else { scene.remove(sp); sp.material.map.dispose(); sp.geometry.dispose(); } }; 
+  // 0.15 -> 0.25 (さらに高速化)
+  const a = () => { f += 0.25; sp.position.y += 0.05; sp.material.opacity = 1 - f; if (f < 1) requestAnimationFrame(a); else { scene.remove(sp); sp.material.map.dispose(); sp.geometry.dispose(); } }; 
   a(); 
 }
-// 修正②: パーティクルの消える速度を高速化
+// 修正ポイント①: エフェクト消去を超高速化
 function spawnParticle(p, n, c) { 
   const g = new THREE.BoxGeometry(0.25, 0.25, 0.25), m = new THREE.MeshBasicMaterial({ color: c }); 
   for (let i = 0; i < n; i++) { 
     const me = new THREE.Mesh(g, m); me.position.copy(p).add(new THREE.Vector3((Math.random() - .5) * 2, (Math.random() - .5) * 2, (Math.random() - .5) * 2)); scene.add(me); 
     const v = new THREE.Vector3(Math.random() - .5, Math.random() - .5, Math.random() - .5).multiplyScalar(1.5); 
-    // 0.92 -> 0.80 (急激に小さくなる)
-    const a = () => { me.position.add(v); me.scale.multiplyScalar(0.80); if (me.scale.x > 0.05) requestAnimationFrame(a); else scene.remove(me); }; 
+    // 0.8 -> 0.7 (さらに高速で消える)
+    const a = () => { me.position.add(v); me.scale.multiplyScalar(0.7); if (me.scale.x > 0.05) requestAnimationFrame(a); else scene.remove(me); }; 
     a(); 
   } 
 }
@@ -269,27 +269,28 @@ function spawnEnemy() {
 
 function actionMetsu() { 
   let t = null, minD = 999; 
-  // ★重要：VR時はカメラのワールド座標を基準に判定する
   const pPos = new THREE.Vector3();
   if (renderer.xr.isPresenting) camera.getWorldPosition(pPos);
   else pPos.copy(playerBody.position);
 
   kekkaiList.forEach(k => { 
-    if(!k.isGhost) return; 
+    // 修正ポイント③: isGhostチェックを削除し、全ての結界を対象にする
     const d = pPos.distanceTo(k.mesh.position); 
     if (d < minD) { minD = d; t = k; } 
   }); 
   if (!t || t.shrinking) { showMsg("対象なし", "#888"); return; } 
   showMsg("滅！", "#f24"); spawnText("滅", t.mesh.position, "#f24"); 
-  t.shrinking = true; t.mesh.material.color.setHex(0xff0044); 
+  t.shrinking = true; 
+  // 修正ポイント④: 赤色半透明に変更せず、そのまま縮小させる（残留イメージを廃止）
+  
   if (t.body) { world.removeBody(t.body); t.body = null; } 
-  const bbox = new THREE.Box3().setFromObject(t.mesh); let sc = t.mesh.scale.x; 
+  const bbox = new THREE.Box3().setFromObject(t.mesh); 
   const loop = () => { 
     if (!kekkaiList.includes(t)) return; 
-    // 修正②: 滅却速度を高速化 (0.1 -> 0.3)
-    sc -= 0.3; t.mesh.scale.setScalar(sc); 
+    // 修正ポイント④: 縮小演出（赤く残さず、ただ急速に小さくなる）
+    t.mesh.scale.multiplyScalar(0.7); // 等比的に急速縮小
     enemies.forEach(e => { if (bbox.containsPoint(e.mesh.position)) { killEnemy(e); } }); 
-    if (sc <= 0.1) { removeKekkai(t); spawnParticle(t.mesh.position, 30, 0xffaa00); } else { requestAnimationFrame(loop); }
+    if (t.mesh.scale.x <= 0.05) { removeKekkai(t); spawnParticle(t.mesh.position, 30, 0xffaa00); } else { requestAnimationFrame(loop); }
   }; loop(); 
 }
 
@@ -304,17 +305,12 @@ function updateAimMarker() {
   if(!playerGroup || !aimMarker) return; 
    
   if (renderer.xr.isPresenting) { 
-    // ★重要修正：ワールド座標系での位置計算
-    // カメラの「絶対座標」と「絶対的な向き」を取得して計算する
     camera.getWorldPosition(_vecPos);
     camera.getWorldDirection(_vecDir);
-    
-    // 現在の頭の位置 + 視線方向 * 距離
     aimMarker.position.copy(_vecPos).add(_vecDir.multiplyScalar(currentDist));
     aimMarker.rotation.y = Math.atan2(_vecDir.x, _vecDir.z);
     aimMarker.visible = true; 
   } else { 
-    // Mobile/PC
     aimMarker.visible = true; 
     const e = new THREE.Euler(camAngle.pitch, camAngle.yaw, 0, 'YXZ'); 
     const d = new THREE.Vector3(0, 0, -1).applyEuler(e); 
@@ -347,10 +343,12 @@ function updateDynamicBarrier(state, currentHandPos, updatePhysics) {
   const dz = Math.abs(currentHandPos.z - state.startHandPos.z);
     
   const sensitivity = CFG.kekkai.sensitivity;
-  const sy = 1.0 + dy * sensitivity;
   const hMove = Math.sqrt(dx*dx + dz*dz);
-  const sx = 1.0 + hMove * sensitivity;
-  const sz = 1.0 + hMove * sensitivity; 
+  
+  // 修正ポイント②: 初期サイズ（state.initialScale）を基準に拡大
+  const sy = state.initialScale.y + dy * sensitivity;
+  const sx = state.initialScale.x + hMove * sensitivity;
+  const sz = state.initialScale.z + hMove * sensitivity; 
 
   state.mesh.position.copy(state.startOrigin);
   state.mesh.scale.set(sx, sy, sz);
@@ -379,22 +377,14 @@ function handleVRInput() {
   if (!session) return;
 
   const cam = renderer.xr.getCamera();
-   
-  // ★重要修正：ワールド方向ベクトルを取得し、移動に使用する
-  // これにより「カメラが見ている方向」が「前」となる
   camera.getWorldDirection(_vecDir);
-  _vecDir.y = 0; _vecDir.normalize(); // 水平化
-   
-  // 右方向ベクトルを算出 (Upベクトルとの外積)
+  _vecDir.y = 0; _vecDir.normalize(); 
   _vecRight.crossVectors(_vecDir, _vecUp).normalize(); 
-  // 注意: Three.jsの座標系では外積の順序で符号が変わるが、
-  // cross(Forward, Up) -> Left? Right? 
-  // Forward=(0,0,-1), Up=(0,1,0) -> Cross=(-1,0,0) = Left??
-  // 補正: cross(Up, Forward) -> (-1,0,0)?? 
-  // 直感的に、StickXがプラスで右に行きたいので、計算後に確認して符号調整
-  // ここでは (Forward x Up) は通常 左(-X)を向くため、_vecRightを反転させるか、
-  // あるいは (-stickX) を使う。ここではベクトルを反転させて「右」として扱う。
   _vecRight.negate(); 
+
+  // 修正ポイント②: プレイヤーの視点の高さを取得
+  camera.getWorldPosition(_vecPos);
+  const headHeight = Math.max(0.5, _vecPos.y); // 最低0.5m保証
 
   for (const src of session.inputSources) {
     if (!src.gamepad) continue;
@@ -402,46 +392,43 @@ function handleVRInput() {
     const hand = src.handedness;
     const idx = (hand === 'left') ? 0 : 1;
     if (!controllers[idx]) continue;
-    const ctrlPos = controllers[idx].position; // Note: Local to PlayerGroup usually
+    const ctrlPos = controllers[idx].position; 
 
     // --- 左手: 移動 (視点基準) & 解 ---
     if (hand === 'left') {
       if (gp.axes.length >= 4) { 
         const stickX = gp.axes[2]; 
-        const stickY = gp.axes[3]; // 上:-1 下:+1
+        const stickY = gp.axes[3]; 
         if (Math.abs(stickX) > 0.1 || Math.abs(stickY) > 0.1) {
-          // 前後移動: stickYが負(上)のとき、Forward方向に進む -> -stickY
-          // 左右移動: stickXが正(右)のとき、Right方向に進む -> +stickX
-          // 修正①: 左スティック左右反転のリクエスト対応 (-stickX に変更)
+          // 左スティック左右反転維持 (-stickX)
           const moveVec = _vecDir.clone().multiplyScalar(-stickY)
             .add(_vecRight.clone().multiplyScalar(-stickX));
-          
           moveVec.normalize().multiplyScalar(CFG.player.speed); 
-
-          playerBody.velocity.x = moveVec.x; 
-          playerBody.velocity.z = moveVec.z;
-        } else {
-          playerBody.velocity.x = 0; playerBody.velocity.z = 0;
-        }
+          playerBody.velocity.x = moveVec.x; playerBody.velocity.z = moveVec.z;
+        } else { playerBody.velocity.x = 0; playerBody.velocity.z = 0; }
       }
-      // 左トリガー(0): 「解」
       if (gp.buttons[0]?.pressed) { if (!vrState.left.triggerHeld) { actionKai(); vrState.left.triggerHeld = true; } } else { vrState.left.triggerHeld = false; }
-      // 左グリップ(1): 顕現結界
       const grip = gp.buttons[1]?.pressed;
       if (grip) {
         if (!vrState.left.drawing) {
           if (kekkaiList.length >= CFG.kekkai.max) { showMsg("上限", "#f44"); } 
           else {
             vrState.left.drawing = true; vrState.left.startHandPos.copy(ctrlPos);
-            // ★重要：エイムマーカー（ワールド座標）の位置に生成
-            vrState.left.startOrigin.copy(aimMarker.position); 
+            // 修正ポイント②: 初期サイズを目線〜地面に設定
+            // 位置は目線の半分(地面と目線の中点)、高さは目線の高さ
+            vrState.left.startOrigin.set(aimMarker.position.x, headHeight / 2, aimMarker.position.z);
+            vrState.left.initialScale.set(1, headHeight, 1);
+            
             const g = new THREE.BoxGeometry(1, 1, 1);
             const m = new THREE.MeshPhongMaterial({ color: CFG.colors.drawPhys, transparent: true, opacity: 0.6, side: THREE.DoubleSide });
             vrState.left.mesh = new THREE.Mesh(g, m);
             vrState.left.mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 })));
-            vrState.left.mesh.position.copy(vrState.left.startOrigin); scene.add(vrState.left.mesh);
+            vrState.left.mesh.position.copy(vrState.left.startOrigin);
+            vrState.left.mesh.scale.set(1, headHeight, 1);
+            scene.add(vrState.left.mesh);
+            
             vrState.left.body = new CANNON.Body({ mass: 0, material: new CANNON.Material('kek') });
-            vrState.left.body.addShape(new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5)));
+            vrState.left.body.addShape(new CANNON.Box(new CANNON.Vec3(0.5, headHeight/2, 0.5)));
             vrState.left.body.position.copy(vrState.left.startOrigin); world.addBody(vrState.left.body);
           }
         } else { if (vrState.left.mesh && vrState.left.body) updateDynamicBarrier(vrState.left, ctrlPos, true); }
@@ -456,10 +443,7 @@ function handleVRInput() {
     // --- 右手: 視点回転, 滅, 幽体, ジャンプ, 距離 ---
     if (hand === 'right') {
       const turnVal = gp.axes[2];
-      if (Math.abs(turnVal) > 0.2) { 
-        // 右スティックで PlayerGroup 全体を回転させる (Snap Turn的にスムーズ回転)
-        camAngle.yaw -= turnVal * 0.04; 
-      }
+      if (Math.abs(turnVal) > 0.2) { camAngle.yaw -= turnVal * 0.04; }
       if (gp.buttons[4]?.pressed && Math.abs(playerBody.velocity.y) < 1) playerBody.velocity.y = CFG.player.jump;
       if (gp.buttons[5]?.pressed) { if (!vrState.right.bBtnHeld) { currentDist = (currentDist === CFG.dist.near) ? CFG.dist.far : CFG.dist.near; showMsg(currentDist === CFG.dist.near ? "近" : "遠", "#fff"); vrState.right.bBtnHeld = true; } } else { vrState.right.bBtnHeld = false; }
       if (gp.buttons[0]?.pressed) { if (!vrState.right.triggerHeld) { actionMetsu(); vrState.right.triggerHeld = true; } } else { vrState.right.triggerHeld = false; }
@@ -469,12 +453,17 @@ function handleVRInput() {
           if (kekkaiList.length >= CFG.kekkai.max) { showMsg("上限", "#f44"); } 
           else {
             vrState.right.drawing = true; vrState.right.startHandPos.copy(ctrlPos);
-            vrState.right.startOrigin.copy(aimMarker.position); 
+            // 修正ポイント②: 右手（幽体）も同様に目線〜地面
+            vrState.right.startOrigin.set(aimMarker.position.x, headHeight / 2, aimMarker.position.z);
+            vrState.right.initialScale.set(1, headHeight, 1);
+
             const g = new THREE.BoxGeometry(1, 1, 1);
             const m = new THREE.MeshPhongMaterial({ color: CFG.colors.drawGhost, transparent: true, opacity: 0.4, side: THREE.DoubleSide });
             vrState.right.mesh = new THREE.Mesh(g, m);
             vrState.right.mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 })));
-            vrState.right.mesh.position.copy(vrState.right.startOrigin); scene.add(vrState.right.mesh);
+            vrState.right.mesh.position.copy(vrState.right.startOrigin); 
+            vrState.right.mesh.scale.set(1, headHeight, 1);
+            scene.add(vrState.right.mesh);
           }
         } else { if (vrState.right.mesh) updateDynamicBarrier(vrState.right, ctrlPos, false); }
       } else {
@@ -486,15 +475,24 @@ function handleVRInput() {
     }
   }
 
-  // 物理体の位置にPlayerGroupを移動させる
   playerGroup.position.copy(playerBody.position);
-  // 右スティックによる回転(Yaw)を適用
   playerGroup.rotation.y = camAngle.yaw;
 }
 
-// --- Mobile/PC Inputs ---
-function createActiveMobile() { const p = aimMarker.position.clone(), r = camAngle.yaw; const b = new CANNON.Body({ mass: 0, material: new CANNON.Material('kek') }); b.position.copy(p); b.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), r); world.addBody(b); const g = new THREE.BoxGeometry(1, 1, 1), m = new THREE.MeshPhongMaterial({ color: CFG.colors.drawPhys, transparent: true, opacity: 0.5, side: THREE.DoubleSide }); const mesh = new THREE.Mesh(g, m); mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 }))); mesh.position.copy(p); mesh.rotation.y = r; scene.add(mesh); return { body: b, mesh: mesh, startP: p, startR: r, currentS: { x: 1, y: 1, z: 1 } }; }
-function updateActiveMobile(k, dx, dy) { const sx = 1.0 + Math.max(0, dx), sy = 1.0 + Math.max(0, dy), sz = sx; k.currentS = { x: sx, y: sy, z: sz }; k.mesh.scale.set(sx, sy, sz); const newY = k.startP.y + (sy - 1.0) / 2; k.mesh.position.y = newY; k.body.position.y = newY; k.body.shapes = []; k.body.addShape(new CANNON.Box(new CANNON.Vec3(sx / 2, sy / 2, sz / 2))); }
+// --- Mobile/PC Inputs (簡易対応: 初期サイズ変更反映) ---
+function createActiveMobile() { 
+  const p = aimMarker.position.clone(), r = camAngle.yaw; 
+  // モバイル版でも目線高さを考慮（簡易的に現在位置+高さから）
+  const headH = playerGroup.position.y + 1.7; // 概算
+  p.y = headH / 2; // 地面と目線の中間
+  
+  const b = new CANNON.Body({ mass: 0, material: new CANNON.Material('kek') }); b.position.copy(p); b.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), r); world.addBody(b); const g = new THREE.BoxGeometry(1, 1, 1), m = new THREE.MeshPhongMaterial({ color: CFG.colors.drawPhys, transparent: true, opacity: 0.5, side: THREE.DoubleSide }); const mesh = new THREE.Mesh(g, m); mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 }))); mesh.position.copy(p); mesh.rotation.y = r; 
+  // 初期スケール
+  mesh.scale.set(1, headH, 1);
+  scene.add(mesh); 
+  return { body: b, mesh: mesh, startP: p, startR: r, initialScale: {x:1, y:headH, z:1}, currentS: { x: 1, y: headH, z: 1 } }; 
+}
+function updateActiveMobile(k, dx, dy) { const sx = k.initialScale.x + Math.max(0, dx * 10), sy = k.initialScale.y + Math.max(0, dy * 10), sz = sx; k.currentS = { x: sx, y: sy, z: sz }; k.mesh.scale.set(sx, sy, sz); const newY = k.startP.y; /* 中心固定 */ k.mesh.position.y = newY; k.body.position.y = newY; k.body.shapes = []; k.body.addShape(new CANNON.Box(new CANNON.Vec3(sx / 2, sy / 2, sz / 2))); }
 function finalizeMobile(k) { k.mesh.material.color.setHex(CFG.colors.kekkai); k.mesh.material.opacity = 0.5; kekkaiList.push({ body: k.body, mesh: k.mesh, shrinking: false, isGhost: false }); spawnText("結", k.mesh.position, "#ff0"); updateHUD(); }
 function setupMobileInputs(){
   els.stick.addEventListener('touchstart',e=>{e.preventDefault();if(stickId!==null)return;const t=e.changedTouches[0];stickId=t.identifier;const r=els.stick.getBoundingClientRect();stickStart={x:r.left+r.width/2,y:r.top+r.height/2};tapTime=Date.now();tapPos={x:t.clientX,y:t.clientY};moveStick(t.clientX,t.clientY);},{passive:false});
@@ -510,8 +508,12 @@ function setupMobileInputs(){
   els.btnAct.addEventListener('touchstart',e=>{e.preventDefault();if(actId!==null)return;const t=e.changedTouches[0];actId=t.identifier;actStartPos={x:t.clientX,y:t.clientY};});
   els.btnAct.addEventListener('touchend',e=>{e.preventDefault();for(let i=0;i<e.changedTouches.length;i++){if(e.changedTouches[i].identifier===actId){const t=e.changedTouches[i];if(Math.hypot(t.clientX-actStartPos.x,t.clientY-actStartPos.y)>20)actionKai();else actionMetsu();actId=null;}}});
   els.modeBtn.addEventListener('touchstart',e=>{e.preventDefault(); e.stopPropagation(); isPhysMode = !isPhysMode; els.modeBtn.textContent = isPhysMode ? "モード: 顕現" : "モード: 幽体"; els.modeBtn.className = isPhysMode ? "phys" : "ghost"; els.btnDraw.style.background = isPhysMode ? "linear-gradient(135deg, #FFD700, #FF8C00)" : "linear-gradient(135deg, #03a9f4, #0288d1)"; els.btnDraw.innerHTML = isPhysMode ? "顕<br><span style='font-size:10px'>Hold</span>" : "結<br><span style='font-size:10px'>Hold</span>"; showMsg(isPhysMode ? "物理顕現モード" : "幽体結界モード", "#fff");});
-  els.btnDraw.addEventListener('touchstart',e=>{ e.preventDefault(); if(drawId!==null)return; if(kekkaiList.length>=CFG.kekkai.max){showMsg("上限到達","#f44");return;} const t=e.changedTouches[0]; drawId=t.identifier; els.btnDraw.classList.add('drawing'); if(isPhysMode) { activePhysKekkai = createActiveMobile(); activePhysKekkai.startX=t.clientX; activePhysKekkai.startY=t.clientY; } else { drawState.active=true; drawState.startX=t.clientX; drawState.startY=t.clientY; const gg=new THREE.BoxGeometry(1,1,1),gm=new THREE.MeshPhongMaterial({color:CFG.colors.drawGhost,transparent:true,opacity:0.5, side: THREE.DoubleSide}); drawState.ghost=new THREE.Mesh(gg,gm); drawState.ghost.add(new THREE.LineSegments(new THREE.EdgesGeometry(gg), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 }))); drawState.ghost.position.copy(aimMarker.position); drawState.ghost.rotation.y=camAngle.yaw; scene.add(drawState.ghost); } });
-  els.btnDraw.addEventListener('touchmove',e=>{ e.preventDefault(); if(drawId===null)return; for(let i=0;i<e.changedTouches.length;i++){if(e.changedTouches[i].identifier===drawId){ const t=e.changedTouches[i]; if(isPhysMode && activePhysKekkai) { const dx=Math.abs(t.clientX-activePhysKekkai.startX)*0.06, dy=(activePhysKekkai.startY-t.clientY)*0.06; updateActiveMobile(activePhysKekkai, dx, dy); } else if(drawState.active && drawState.ghost) { const dx=Math.abs(t.clientX-drawState.startX)*0.06, dy=(drawState.startY-t.clientY)*0.06; const sxz=1.0+Math.max(0,dx), sy=1.0+Math.max(0,dy); drawState.ghost.scale.set(sxz,sy,sxz); drawState.ghost.position.y=aimMarker.position.y+(sy/2-0.5); } }} });
+  els.btnDraw.addEventListener('touchstart',e=>{ e.preventDefault(); if(drawId!==null)return; if(kekkaiList.length>=CFG.kekkai.max){showMsg("上限到達","#f44");return;} const t=e.changedTouches[0]; drawId=t.identifier; els.btnDraw.classList.add('drawing'); if(isPhysMode) { activePhysKekkai = createActiveMobile(); activePhysKekkai.startX=t.clientX; activePhysKekkai.startY=t.clientY; } else { drawState.active=true; drawState.startX=t.clientX; drawState.startY=t.clientY; const gg=new THREE.BoxGeometry(1,1,1),gm=new THREE.MeshPhongMaterial({color:CFG.colors.drawGhost,transparent:true,opacity:0.5, side: THREE.DoubleSide}); drawState.ghost=new THREE.Mesh(gg,gm); drawState.ghost.add(new THREE.LineSegments(new THREE.EdgesGeometry(gg), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 }))); 
+  // モバイル版幽体簡易対応
+  const headH = playerGroup.position.y + 1.7; drawState.ghost.scale.set(1, headH, 1);
+  drawState.ghost.position.copy(aimMarker.position); drawState.ghost.position.y = headH/2;
+  drawState.ghost.rotation.y=camAngle.yaw; scene.add(drawState.ghost); } });
+  els.btnDraw.addEventListener('touchmove',e=>{ e.preventDefault(); if(drawId===null)return; for(let i=0;i<e.changedTouches.length;i++){if(e.changedTouches[i].identifier===drawId){ const t=e.changedTouches[i]; if(isPhysMode && activePhysKekkai) { const dx=Math.abs(t.clientX-activePhysKekkai.startX)*0.06, dy=(activePhysKekkai.startY-t.clientY)*0.06; updateActiveMobile(activePhysKekkai, dx, dy); } else if(drawState.active && drawState.ghost) { const dx=Math.abs(t.clientX-drawState.startX)*0.06, dy=(drawState.startY-t.clientY)*0.06; const sxz=1.0+Math.max(0,dx), sy=playerGroup.position.y+1.7+Math.max(0,dy); drawState.ghost.scale.set(sxz,sy,sxz); drawState.ghost.position.y=sy/2; } }} });
   els.btnDraw.addEventListener('touchend',e=>{ e.preventDefault(); for(let i=0;i<e.changedTouches.length;i++){if(e.changedTouches[i].identifier===drawId){ if(isPhysMode && activePhysKekkai) { finalizeMobile(activePhysKekkai); activePhysKekkai=null; } else if(drawState.ghost) { createKekkai(drawState.ghost.position,drawState.ghost.scale,drawState.ghost.rotation.y, true); safeRemoveMesh(drawState.ghost); drawState.ghost=null; drawState.active=false; } drawId=null; els.btnDraw.classList.remove('drawing'); }} });
 }
 
@@ -613,12 +615,9 @@ function loop(t) {
 
   if (!renderer.xr.isPresenting) { 
     // Mobile/PC movement logic
-    // ★重要修正: カメラのY軸回転を適用して移動方向を決定する
     const yaw = camAngle.yaw;
     const fwd = new THREE.Vector3(input.x, 0, input.y).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw); 
     playerBody.velocity.x = fwd.x * CFG.player.speed; playerBody.velocity.z = fwd.z * CFG.player.speed; 
-     
-    // カメラの追従
     playerGroup.position.copy(playerBody.position).add(new THREE.Vector3(0, CFG.player.height, 0)); 
     playerGroup.rotation.y = yaw; camera.rotation.x = camAngle.pitch; 
   }
