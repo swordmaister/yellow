@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<title>真・結界師VR — v8.2 VR Init Fix</title>
+<title>真・結界師VR — v8.3 Movement & Aim Fix</title>
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#87CEEB">
 <style>
@@ -310,13 +310,16 @@ function actionKai() {
   } else { showMsg("結界なし", "#888"); } 
 }
 
+// Fixed: Using updateMatrixWorld to ensure correct world position retrieval
 function updateAimMarker() { 
   if(!aimMarker) return; 
   let origin = new THREE.Vector3();
   let direction = new THREE.Vector3();
   const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
   
-  // Use World Position for VR consistency
+  // FIX: Force matrix update to get current frame position
+  cam.updateMatrixWorld(true);
+  
   cam.getWorldPosition(origin); 
   cam.getWorldDirection(direction);
   
@@ -597,22 +600,41 @@ function loop(t) {
   
   if (renderer.xr.isPresenting) handleVRInput();
 
-  const camDir = new THREE.Vector3();
-  const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
-  cam.getWorldDirection(camDir);
-  camDir.y = 0; camDir.normalize();
-  const camRight = new THREE.Vector3(-camDir.z, 0, camDir.x);
+  // --- FIX: VISUAL ORIENTATION UPDATE ---
+  // Apply rotation BEFORE calculating movement in Non-VR to ensure "Forward" is correct
+  if(!renderer.xr.isPresenting) {
+      camera.rotation.x = camAngle.pitch;
+      playerGroup.rotation.y = camAngle.yaw;
+  }
+
+  // --- FIX: MOVEMENT CALCULATION ---
+  // Explicitly calculate directions based on Yaw/Headset to fix "NESW" locking
+  const moveDir = new THREE.Vector3();
   
-  const moveVec = camDir.clone().multiplyScalar(-input.y).add(camRight.clone().multiplyScalar(input.x));
+  if (renderer.xr.isPresenting) {
+      // VR: Forward is where headset looks
+      renderer.xr.getCamera().getWorldDirection(moveDir);
+  } else {
+      // Non-VR: Forward is based purely on Yaw angle (math to avoid matrix lag)
+      // Yaw 0 = South (-Z), Yaw 90 = West (-X) in Three.js standard
+      // Vector (0,0,-1) rotated by Y axis
+      moveDir.set(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), camAngle.yaw);
+  }
+  moveDir.y = 0; moveDir.normalize();
+  
+  const moveRight = new THREE.Vector3(-moveDir.z, 0, moveDir.x); // Cross product
+  const moveVec = moveDir.clone().multiplyScalar(-input.y).add(moveRight.clone().multiplyScalar(input.x));
   
   playerBody.velocity.x = moveVec.x * CFG.player.speed;
   playerBody.velocity.z = moveVec.z * CFG.player.speed;
   
+  // Sync Visuals
   playerGroup.position.copy(playerBody.position).add(new THREE.Vector3(0, CFG.player.height, 0));
-  if(!renderer.xr.isPresenting) camera.rotation.x = camAngle.pitch;
-  playerGroup.rotation.y = camAngle.yaw;
+  // Rotation for Non-VR is already applied above
 
+  // --- FIX: AIM MARKER UPDATE ---
   updateAimMarker(); 
+
   if (t > gameState.nextSpawn) { spawnEnemy(); gameState.nextSpawn = t + 3000 - gameState.wave * 100; }
   
   kekkaiList.forEach(k => {
